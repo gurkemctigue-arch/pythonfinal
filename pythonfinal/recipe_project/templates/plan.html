@@ -1,0 +1,460 @@
+{% extends "base.html" %}
+
+{% block title %}膳食计划{% endblock %}
+
+{% block extra_head %}
+<style>
+    .plan-hero {
+        background: linear-gradient(135deg, #9C27B0 0%, #6A1B9A 100%);
+        color: white;
+        padding: 2.5rem 0;
+        margin-bottom: 2rem;
+    }
+    .day-card {
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        overflow: hidden;
+        transition: all 0.2s;
+    }
+    .day-card:hover {
+        border-color: #9C27B0;
+        box-shadow: 0 4px 16px rgba(156,39,176,0.12);
+    }
+    .day-header {
+        background: #f8f9fa;
+        padding: 0.75rem 1rem;
+        font-weight: 600;
+        font-size: 0.95rem;
+        border-bottom: 1px solid #e9ecef;
+    }
+    .day-header .cal-badge {
+        font-size: 0.8rem;
+        font-weight: 700;
+        background: #F3E5F5;
+        color: #7B1FA2;
+    }
+    .meal-row {
+        padding: 0.6rem 1rem;
+        border-bottom: 1px solid #f5f5f5;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    .meal-row:last-child { border-bottom: none; }
+    .meal-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.9rem;
+        flex-shrink: 0;
+    }
+    .meal-icon.breakfast { background: #FFF3E0; color: #FF9800; }
+    .meal-icon.lunch { background: #E3F2FD; color: #2196F3; }
+    .meal-icon.dinner { background: #E8F5E9; color: #4CAF50; }
+    .meal-name {
+        font-size: 0.88rem;
+        color: #333;
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .meal-cal {
+        font-size: 0.75rem;
+        color: #888;
+        flex-shrink: 0;
+    }
+    .macro-summary {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 0.75rem;
+        margin-top: 1rem;
+        font-size: 0.8rem;
+    }
+    .macro-pill {
+        display: inline-block;
+        padding: 0.2em 0.6em;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    .macro-pill.protein { background: #FCE4EC; color: #C2185B; }
+    .macro-pill.fat { background: #FFF8E1; color: #F57F17; }
+    .macro-pill.carbs { background: #E1F5FE; color: #0277BD; }
+    .summary-card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        background: linear-gradient(135deg, #7B1FA2, #9C27B0);
+        color: white;
+    }
+    .summary-card .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+    }
+    .btn-purple {
+        background: #9C27B0;
+        color: white;
+        border: none;
+    }
+    .btn-purple:hover {
+        background: #7B1FA2;
+        color: white;
+    }
+    .placeholder-chart {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 2rem;
+        text-align: center;
+        color: #aaa;
+        min-height: 200px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="plan-hero">
+    <div class="container">
+        <h4 class="fw-bold mb-1">
+            <i class="bi bi-calendar-week me-2"></i>每周膳食计划
+        </h4>
+        <p class="mb-0 opacity-75">
+            智能生成7天早中晚三餐搭配，日均目标热量约 2000 kcal
+        </p>
+    </div>
+</div>
+
+<div class="container">
+    {% if error %}
+    <div class="alert alert-warning">{{ error }}</div>
+    {% endif %}
+
+    {% if weekly_plan %}
+    <!-- 参数设置 -->
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small fw-500 text-muted">每日目标热量</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" id="targetCal" name="target_cal"
+                               value="{{ current_target or 2000 }}" min="800" max="4000" step="50">
+                        <span class="input-group-text">kcal</span>
+                    </div>
+                    <div class="form-text small">范围 800-4000 kcal，留空则使用随机范围</div>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-500 text-muted">计划天数</label>
+                    <select class="form-select" id="planDays" name="days">
+                        <option value="1" {% if current_days==1 %}selected{% endif %}>1 天</option>
+                        <option value="3" {% if current_days==3 %}selected{% endif %}>3 天</option>
+                        <option value="5" {% if current_days==5 %}selected{% endif %}>5 天</option>
+                        <option value="7" {% if current_days==7 %}selected{% endif %}>7 天</option>
+                        <option value="14" {% if current_days==14 %}selected{% endif %}>14 天</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-500 text-muted">营养目标</label>
+                    <div class="form-text small text-muted mb-1">蛋白质 15-30% · 脂肪 20-35% · 碳水 35-55%</div>
+                </div>
+                <div class="col-md-2">
+                    <button type="button" class="btn btn-purple w-100" onclick="regeneratePlan()">
+                        <i class="bi bi-arrow-repeat me-1"></i>重新生成
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 总体摘要 -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3">
+            <div class="card summary-card text-center">
+                <div class="card-body py-3">
+                    <div class="stat-value">{{ weekly_plan.avg_daily_calories|int }}</div>
+                    <div class="small opacity-75">日均热量(kcal)</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card bg-white border-0 shadow-sm text-center">
+                <div class="card-body py-3">
+                    <div class="stat-value text-danger">{{ weekly_plan.avg_macros.protein_pct|int }}%</div>
+                    <div class="small text-muted">平均蛋白质</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card bg-white border-0 shadow-sm text-center">
+                <div class="card-body py-3">
+                    <div class="stat-value text-warning">{{ weekly_plan.avg_macros.fat_pct|int }}%</div>
+                    <div class="small text-muted">平均脂肪</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card bg-white border-0 shadow-sm text-center">
+                <div class="card-body py-3">
+                    <div class="stat-value text-info">{{ weekly_plan.avg_macros.carbs_pct|int }}%</div>
+                    <div class="small text-muted">平均碳水</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 趋势图 -->
+    {% if matplotlib_available %}
+    <div class="row g-4 mb-4">
+        <div class="col-lg-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0">
+                    <span class="fw-bold">
+                        <i class="bi bi-line-chart text-success me-2"></i>热量趋势
+                    </span>
+                </div>
+                <div class="card-body p-2">
+                    <canvas id="planTrendChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0">
+                    <span class="fw-bold">
+                        <i class="bi bi-bar-chart text-success me-2"></i>宏量营养素
+                    </span>
+                </div>
+                <div class="card-body p-2">
+                    <canvas id="planMacroChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 每日计划 -->
+    <div class="row g-3">
+        {% for day in day_data %}
+        <div class="col-md-6 col-lg-4">
+            <div class="day-card">
+                <div class="day-header">
+                    <span>{{ day.label }}</span>
+                    <span class="badge cal-badge ms-2">{{ day.calories|int }} kcal</span>
+                    <span class="float-end">
+                        <span class="macro-pill protein">P {{ day.macros.protein_pct|int }}%</span>
+                        <span class="macro-pill fat">F {{ day.macros.fat_pct|int }}%</span>
+                        <span class="macro-pill carbs">C {{ day.macros.carbs_pct|int }}%</span>
+                    </span>
+                </div>
+                <div class="meal-row">
+                    <div class="meal-icon breakfast">
+                        <i class="bi bi-sun"></i>
+                    </div>
+                    <div class="meal-name">
+                        {% if day.breakfast %}
+                        {{ day.breakfast.name }} ({{ day.breakfast.calories|int }}kcal)
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="meal-row">
+                    <div class="meal-icon lunch">
+                        <i class="bi bi-brightness-alt-high"></i>
+                    </div>
+                    <div class="meal-name">
+                        {% if day.lunch %}
+                        {{ day.lunch.name }} ({{ day.lunch.calories|int }}kcal)
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="meal-row">
+                    <div class="meal-icon dinner">
+                        <i class="bi bi-moon-stars"></i>
+                    </div>
+                    <div class="meal-name">
+                        {% if day.dinner %}
+                        {{ day.dinner.name }} ({{ day.dinner.calories|int }}kcal)
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% endif %}
+</div>
+
+<script>
+function regeneratePlan() {
+    var targetCal = document.getElementById('targetCal').value;
+    var days = document.getElementById('planDays').value;
+    var params = [];
+    if (targetCal) params.push('target_cal=' + encodeURIComponent(targetCal));
+    if (days && days !== '7') params.push('days=' + encodeURIComponent(days));
+    var qs = params.length > 0 ? '?' + params.join('&') : '';
+    window.location.href = '{{ url_for("plan") }}' + qs;
+}
+
+// ================================================================
+// 膳食计划页面的 Chart.js 图表
+// ================================================================
+let planTrendChart = null;
+let planMacroChart = null;
+
+const PLAN_COLORS = {
+    calories: { bg: 'rgba(76, 175, 80, 0.1)', border: 'rgba(76, 175, 80, 1)' },
+    protein: { bg: 'rgba(220, 53, 69, 0.1)', border: 'rgba(220, 53, 69, 0.7)' },
+    fat: { bg: 'rgba(255, 193, 7, 0.1)', border: 'rgba(255, 193, 7, 0.7)' },
+    carbs: { bg: 'rgba(13, 110, 253, 0.1)', border: 'rgba(13, 110, 253, 0.7)' },
+};
+
+function destroyChart(c) { if (c) { c.destroy(); c = null; } }
+
+document.addEventListener('DOMContentLoaded', function() {
+    const trendData = {{ trend_chart_data | tojson | safe }};
+    const macroData = {{ macro_chart_data | tojson | safe }};
+
+    // 热量趋势折线图
+    const trendCtx = document.getElementById('planTrendChart');
+    if (trendCtx) {
+        destroyChart(planTrendChart);
+        planTrendChart = new Chart(trendCtx, {
+            type: 'line',
+            data: {
+                labels: trendData.labels,
+                datasets: [
+                    {
+                        label: '总热量 (kcal)',
+                        data: trendData.calories,
+                        borderColor: PLAN_COLORS.calories.border,
+                        backgroundColor: PLAN_COLORS.calories.bg,
+                        borderWidth: 2.5,
+                        fill: true,
+                        tension: 0.3,
+                        yAxisID: 'y',
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                    },
+                    {
+                        label: '蛋白质 (g)',
+                        data: trendData.protein,
+                        borderColor: PLAN_COLORS.protein.border,
+                        backgroundColor: 'transparent',
+                        borderWidth: 1.5,
+                        borderDash: [5, 3],
+                        tension: 0.3,
+                        yAxisID: 'y1',
+                        pointRadius: 3,
+                    },
+                    {
+                        label: '脂肪 (g)',
+                        data: trendData.fat,
+                        borderColor: PLAN_COLORS.fat.border,
+                        backgroundColor: 'transparent',
+                        borderWidth: 1.5,
+                        borderDash: [5, 3],
+                        tension: 0.3,
+                        yAxisID: 'y1',
+                        pointRadius: 3,
+                    },
+                    {
+                        label: '碳水 (g)',
+                        data: trendData.carbs,
+                        borderColor: PLAN_COLORS.carbs.border,
+                        backgroundColor: 'transparent',
+                        borderWidth: 1.5,
+                        borderDash: [5, 3],
+                        tension: 0.3,
+                        yAxisID: 'y1',
+                        pointRadius: 3,
+                    },
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'bottom' },
+                    tooltip: { callbacks: { label: (item) => ` ${item.dataset.label}: ${item.raw}` } },
+                },
+                scales: {
+                    y: {
+                        type: 'linear', position: 'left',
+                        title: { display: true, text: '热量 (kcal)' },
+                        grid: { color: 'rgba(0,0,0,0.05)' },
+                    },
+                    y1: {
+                        type: 'linear', position: 'right',
+                        title: { display: true, text: '重量 (g)' },
+                        grid: { drawOnChartArea: false },
+                    },
+                    x: { grid: { display: false } },
+                },
+            }
+        });
+    }
+
+    // 宏量营养素堆叠柱状图
+    const macroCtx = document.getElementById('planMacroChart');
+    if (macroCtx) {
+        destroyChart(planMacroChart);
+        planMacroChart = new Chart(macroCtx, {
+            type: 'bar',
+            data: {
+                labels: macroData.labels,
+                datasets: [
+                    {
+                        label: '蛋白质 (g)',
+                        data: macroData.protein,
+                        backgroundColor: 'rgba(220, 53, 69, 0.8)',
+                        borderColor: 'rgba(220, 53, 69, 1)',
+                        borderWidth: 1,
+                    },
+                    {
+                        label: '脂肪 (g)',
+                        data: macroData.fat,
+                        backgroundColor: 'rgba(255, 193, 7, 0.8)',
+                        borderColor: 'rgba(255, 193, 7, 1)',
+                        borderWidth: 1,
+                    },
+                    {
+                        label: '碳水 (g)',
+                        data: macroData.carbs,
+                        backgroundColor: 'rgba(13, 110, 253, 0.8)',
+                        borderColor: 'rgba(13, 110, 253, 1)',
+                        borderWidth: 1,
+                    },
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    tooltip: { callbacks: { label: (item) => ` ${item.dataset.label}: ${item.raw}g` } },
+                },
+                scales: {
+                    x: { stacked: true, grid: { display: false } },
+                    y: { stacked: true, beginAtZero: true, title: { display: true, text: '重量 (g)' } },
+                },
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

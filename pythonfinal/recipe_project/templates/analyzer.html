@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+
+{% block title %}食材分析{% endblock %}
+
+{% block extra_head %}
+<style>
+    .analyzer-hero {
+        background: linear-gradient(135deg, #2196F3 0%, #0D47A1 100%);
+        color: white;
+        padding: 2.5rem 0;
+        margin-bottom: 2rem;
+    }
+    .analyzer-form {
+        max-width: 700px;
+        margin: 0 auto;
+    }
+    .analyzer-textarea {
+        font-size: 1.1rem;
+        min-height: 120px;
+        border-radius: 12px;
+        border: 2px solid #e9ecef;
+        resize: vertical;
+    }
+    .analyzer-textarea:focus {
+        border-color: #4CAF50;
+        box-shadow: 0 0 0 3px rgba(76,175,80,0.15);
+    }
+    .result-card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+    }
+    .ingredient-row {
+        padding: 0.75rem 0;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    .ingredient-row:last-child { border-bottom: none; }
+    .found-badge {
+        background: #E8F5E9;
+        color: #2E7D32;
+        font-size: 0.75rem;
+    }
+    .missing-badge {
+        background: #FFF3E0;
+        color: #E65100;
+        font-size: 0.75rem;
+    }
+    .nutrition-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.75rem;
+    }
+    .nutrition-item {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 0.75rem;
+        text-align: center;
+    }
+    .nutrition-item .value {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #333;
+    }
+    .nutrition-item .unit {
+        font-size: 0.75rem;
+        color: #888;
+    }
+    .nutrition-item .label {
+        font-size: 0.75rem;
+        color: #888;
+        margin-top: 2px;
+    }
+    .placeholder-chart {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 2rem;
+        text-align: center;
+        color: #aaa;
+        min-height: 200px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+    }
+    .hint-box {
+        background: #E3F2FD;
+        border: 1px solid #BBDEFB;
+        border-radius: 8px;
+        padding: 1rem;
+        font-size: 0.85rem;
+        color: #1565C0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="analyzer-hero">
+    <div class="container">
+        <h4 class="fw-bold mb-1">
+            <i class="bi bi-search me-2"></i>食材营养分析
+        </h4>
+        <p class="mb-0 opacity-75">输入食材列表，自动计算总营养成分</p>
+    </div>
+</div>
+
+<div class="container">
+    <!-- 输入表单 -->
+    <div class="card result-card mb-4 analyzer-form">
+        <div class="card-body p-4">
+            <form method="post" action="{{ url_for('analyzer') }}">
+                <div class="mb-3">
+                    <label class="form-label fw-500">输入食材（格式示例）</label>
+                    <textarea
+                        name="ingredients"
+                        class="form-control analyzer-textarea"
+                        placeholder="西红柿 200g, 鸡蛋 2个&#10;鸡胸肉 150g&#10;西兰花 100g"
+                    >{{ input_text or '' }}</textarea>
+                    <div class="hint-box mt-2">
+                        <i class="bi bi-info-circle me-1"></i>
+                        支持格式：用逗号/空格/换行分隔食材，支持单位（g/个/ml/kg等）
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-success btn-lg w-100">
+                    <i class="bi bi-calculator me-2"></i>开始分析
+                </button>
+            </form>
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-danger analyzer-form">{{ error }}</div>
+    {% endif %}
+
+    <!-- 分析结果 -->
+    {% if matched_items %}
+    <div class="row g-4">
+        <!-- 食材匹配详情 -->
+        <div class="col-lg-5">
+            <div class="card result-card">
+                <div class="card-header bg-white">
+                    <span class="fw-bold">
+                        <i class="bi bi-list-check text-success me-2"></i>食材匹配结果
+                    </span>
+                </div>
+                <div class="card-body p-0">
+                    {% for item in matched_items %}
+                    <div class="ingredient-row px-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="fw-500">{{ item.name }}</span>
+                                <span class="text-muted small">{{ item.amount }}{{ item.unit }}</span>
+                            </div>
+                            {% if item.found %}
+                            <span class="badge found-badge">
+                                <i class="bi bi-check-circle me-1"></i>已匹配: {{ item.matched_name }}
+                            </span>
+                            {% else %}
+                            <span class="badge missing-badge">
+                                <i class="bi bi-question-circle me-1"></i>未找到
+                            </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- 营养成分汇总 -->
+        <div class="col-lg-7">
+            <!-- 营养概览 -->
+            <div class="card result-card mb-3">
+                <div class="card-header bg-white">
+                    <span class="fw-bold">
+                        <i class="bi bi-pie-chart text-success me-2"></i>营养成分汇总
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="nutrition-grid">
+                        <div class="nutrition-item">
+                            <div class="value text-danger">{{ total.calories|int }}</div>
+                            <div class="unit">kcal</div>
+                            <div class="label">总热量</div>
+                        </div>
+                        <div class="nutrition-item">
+                            <div class="value text-danger">{{ total.protein|int }}</div>
+                            <div class="unit">g</div>
+                            <div class="label">蛋白质</div>
+                        </div>
+                        <div class="nutrition-item">
+                            <div class="value text-warning">{{ total.fat|int }}</div>
+                            <div class="unit">g</div>
+                            <div class="label">脂肪</div>
+                        </div>
+                        <div class="nutrition-item">
+                            <div class="value text-info">{{ total.carbs|int }}</div>
+                            <div class="unit">g</div>
+                            <div class="label">碳水</div>
+                        </div>
+                        <div class="nutrition-item">
+                            <div class="value text-secondary">{{ total.fiber|int }}</div>
+                            <div class="unit">g</div>
+                            <div class="label">纤维</div>
+                        </div>
+                        <div class="nutrition-item">
+                            <div class="value text-success">{{ total.vitamin_c|int }}</div>
+                            <div class="unit">mg</div>
+                            <div class="label">维生素C</div>
+                        </div>
+                    </div>
+
+                    <!-- 宏量比例 -->
+                    {% if macros %}
+                    <hr>
+                    <div class="row text-center">
+                        <div class="col-4">
+                            <div class="fw-bold text-danger">{{ macros.protein_pct|int }}%</div>
+                            <div class="small text-muted">蛋白质</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="fw-bold text-warning">{{ macros.fat_pct|int }}%</div>
+                            <div class="small text-muted">脂肪</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="fw-bold text-info">{{ macros.carbs_pct|int }}%</div>
+                            <div class="small text-muted">碳水</div>
+                        </div>
+                    </div>
+                    <div class="progress mt-2" style="height: 8px; border-radius: 4px;">
+                        <div class="progress-bar bg-danger" style="width: {{ macros.protein_pct }}%"></div>
+                        <div class="progress-bar bg-warning" style="width: {{ macros.fat_pct }}%"></div>
+                        <div class="progress-bar bg-info" style="width: {{ macros.carbs_pct }}%"></div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- 雷达图 -->
+            {% if radar_chart_data %}
+            <div class="card result-card">
+                <div class="card-header bg-white">
+                    <span class="fw-bold">
+                        <i class="bi bi-hexagon text-success me-2"></i>营养雷达图
+                    </span>
+                </div>
+                <div class="card-body text-center" style="max-width: 380px; margin: 0 auto;">
+                    <canvas id="analyzerRadarChart"></canvas>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const radarData = {{ radar_chart_data | tojson | safe }};
+    if (!radarData) return;
+    const ctx = document.getElementById('analyzerRadarChart');
+    if (!ctx) return;
+    new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: radarData.labels,
+            datasets: [{
+                label: '营养含量 (%日需)',
+                data: radarData.values,
+                backgroundColor: 'rgba(76, 175, 80, 0.2)',
+                borderColor: 'rgba(76, 175, 80, 1)',
+                borderWidth: 2,
+                pointBackgroundColor: 'rgba(76, 175, 80, 1)',
+                pointRadius: 4,
+                pointHoverRadius: 6,
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: (item) => ` ${item.label}: ${item.raw.toFixed(1)}%`
+                    }
+                },
+                legend: { display: false },
+            },
+            scales: {
+                r: {
+                    beginAtZero: true,
+                    max: 100,
+                    ticks: { stepSize: 20, backdropColor: 'transparent' },
+                    pointLabels: { font: { size: 11 } },
+                    grid: { color: 'rgba(0,0,0,0.06)' },
+                }
+            },
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+
+{% block title %}{{ recipe.name }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    .recipe-hero {
+        background: linear-gradient(135deg, #4CAF50, #2E7D32);
+        color: white;
+        padding: 2.5rem 0;
+        margin-bottom: 2rem;
+    }
+    .recipe-meta-badge {
+        background: rgba(255,255,255,0.2);
+        border: 1px solid rgba(255,255,255,0.3);
+        color: white;
+        border-radius: 20px;
+        padding: 0.3em 0.8em;
+        font-size: 0.85rem;
+    }
+    .nutrition-card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    .ingredient-item {
+        padding: 0.6rem 0;
+        border-bottom: 1px solid #f0f0f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .ingredient-item:last-child { border-bottom: none; }
+    .step-number {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: #4CAF50;
+        color: white;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.8rem;
+        font-weight: 600;
+        flex-shrink: 0;
+    }
+    .tag-badge {
+        display: inline-block;
+        background: #E8F5E9;
+        color: #2E7D32;
+        border-radius: 20px;
+        padding: 0.3em 0.8em;
+        font-size: 0.8rem;
+        margin: 0.2rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="recipe-hero">
+    <div class="container">
+        <nav aria-label="breadcrumb" class="mb-2">
+            <ol class="breadcrumb mb-0" style="font-size: 0.85rem;">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}" class="text-white-50">首页</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('recipes_page') }}" class="text-white-50">食谱库</a></li>
+                <li class="breadcrumb-item text-white active">{{ recipe.name }}</li>
+            </ol>
+        </nav>
+        <h3 class="fw-bold mb-2">{{ recipe.name }}</h3>
+        {% if recipe.tags %}
+        <div class="mb-2">
+            {% for tag in recipe.tags %}
+            <span class="recipe-meta-badge">{{ tag }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <div class="d-flex flex-wrap gap-3 small opacity-90">
+            <span><i class="bi bi-clock me-1"></i>{{ recipe.total_time }}分钟</span>
+            <span><i class="bi bi-bar-chart me-1"></i>{{ recipe.difficulty }}</span>
+            <span><i class="bi bi-geo-alt me-1"></i>{{ recipe.cuisine }}</span>
+            <span><i class="bi bi-fire me-1"></i>{{ recipe.calories|int }} kcal</span>
+        </div>
+        {% if recipe.description %}
+        <p class="mb-0 mt-2 opacity-75">{{ recipe.description }}</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="container">
+    <div class="row g-4">
+        <!-- 左侧：营养图表 -->
+        <div class="col-lg-4">
+            <!-- 营养成分卡 -->
+            <div class="card nutrition-card mb-3">
+                <div class="card-header bg-white">
+                    <span class="fw-bold">
+                        <i class="bi bi-pie-chart text-success me-2"></i>营养成分
+                    </span>
+                    <span class="badge bg-danger ms-2">{{ recipe.calories|int }} kcal</span>
+                </div>
+                <div class="card-body">
+                    <div class="row g-2 text-center mb-3">
+                        <div class="col-6">
+                            <div class="p-2 bg-danger bg-opacity-10 rounded">
+                                <div class="fw-bold text-danger">{{ recipe.protein|int }}g</div>
+                                <div class="small text-muted">蛋白质</div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-2 bg-warning bg-opacity-10 rounded">
+                                <div class="fw-bold text-warning">{{ recipe.fat|int }}g</div>
+                                <div class="small text-muted">脂肪</div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-2 bg-info bg-opacity-10 rounded">
+                                <div class="fw-bold text-info">{{ recipe.carbs|int }}g</div>
+                                <div class="small text-muted">碳水</div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-2 bg-secondary bg-opacity-10 rounded">
+                                <div class="fw-bold text-secondary">{{ recipe.nutrition['fiber']|int }}g</div>
+                                <div class="small text-muted">纤维</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 宏量比例 -->
+                    <div class="mb-2 small text-muted">宏量营养素比例</div>
+                    <div class="progress" style="height: 8px; border-radius: 4px;">
+                        <div class="progress-bar bg-danger" style="width: {{ macros.protein_pct }}%"></div>
+                        <div class="progress-bar bg-warning" style="width: {{ macros.fat_pct }}%"></div>
+                        <div class="progress-bar bg-info" style="width: {{ macros.carbs_pct }}%"></div>
+                    </div>
+                    <div class="d-flex justify-content-between small mt-1">
+                        <span class="text-danger">P {{ macros.protein_pct|int }}%</span>
+                        <span class="text-warning">F {{ macros.fat_pct|int }}%</span>
+                        <span class="text-info">C {{ macros.carbs_pct|int }}%</span>
+                    </div>
+
+                    <!-- 微量元素 -->
+                    <hr>
+                    <div class="row g-2 small">
+                        <div class="col-6">
+                            <span class="text-muted">维生素A:</span> {{ recipe.nutrition['vitamin_a']|int }} μg
+                        </div>
+                        <div class="col-6">
+                            <span class="text-muted">维生素C:</span> {{ recipe.nutrition['vitamin_c']|int }} mg
+                        </div>
+                        <div class="col-6">
+                            <span class="text-muted">钙:</span> {{ recipe.nutrition['calcium']|int }} mg
+                        </div>
+                        <div class="col-6">
+                            <span class="text-muted">铁:</span> {{ recipe.nutrition['iron']|int }} mg
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 雷达图 -->
+            <div class="card nutrition-card mb-3">
+                <div class="card-header bg-white">
+                    <span class="fw-bold">
+                        <i class="bi bi-hexagon text-success me-2"></i>营养雷达
+                    </span>
+                </div>
+                <div class="card-body text-center" style="max-width: 320px; margin: 0 auto;">
+                    <canvas id="detailRadarChart"></canvas>
+                </div>
+            </div>
+
+            <!-- 饼图 -->
+            <div class="card nutrition-card">
+                <div class="card-header bg-white">
+                    <span class="fw-bold">
+                        <i class="bi bi-pie-chart-fill text-success me-2"></i>热量来源
+                    </span>
+                </div>
+                <div class="card-body" style="max-width: 320px; margin: 0 auto;">
+                    <canvas id="detailPieChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：食材和步骤 -->
+        <div class="col-lg-8">
+            <!-- 食材 -->
+            <div class="card nutrition-card mb-3">
+                <div class="card-header bg-white">
+                    <span class="fw-bold">
+                        <i class="bi bi-list-check text-success me-2"></i>食材清单
+                    </span>
+                    <span class="badge bg-light text-muted">{{ recipe.ingredients|length }} 种</span>
+                </div>
+                <div class="card-body p-0">
+                    {% for ing in recipe.ingredients %}
+                    <div class="ingredient-item px-3">
+                        <div>
+                            <span class="fw-500">{{ ing.name }}</span>
+                            <span class="text-muted small">{{ ing.amount }}{{ ing.unit }}</span>
+                        </div>
+                        <div class="text-muted small">
+                            ≈ {{ ing.calories|int }} kcal
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- 步骤 -->
+            <div class="card nutrition-card">
+                <div class="card-header bg-white">
+                    <span class="fw-bold">
+                        <i class="bi bi-list-ol text-success me-2"></i>烹饪步骤
+                    </span>
+                </div>
+                <div class="card-body">
+                    {% if recipe.steps %}
+                    {% for step in recipe.steps %}
+                    <div class="d-flex gap-3 mb-3">
+                        <span class="step-number">{{ loop.index }}</span>
+                        <div class="flex-grow-1" style="padding-top: 3px;">{{ step }}</div>
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <p class="text-muted mb-0">暂无步骤说明</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const radarData = {{ radar_chart_data | tojson | safe }};
+    const pieData = {{ pie_chart_data | tojson | safe }};
+
+    // Radar Chart
+    const radarCtx = document.getElementById('detailRadarChart');
+    if (radarCtx) {
+        new Chart(radarCtx, {
+            type: 'radar',
+            data: {
+                labels: radarData.labels,
+                datasets: [{
+                    label: '营养含量 (%日需)',
+                    data: radarData.values,
+                    backgroundColor: 'rgba(76, 175, 80, 0.2)',
+                    borderColor: 'rgba(76, 175, 80, 1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: 'rgba(76, 175, 80, 1)',
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: (item) => ` ${item.label}: ${item.raw.toFixed(1)}%`
+                        }
+                    },
+                    legend: { display: false },
+                },
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: { stepSize: 20, backdropColor: 'transparent' },
+                        pointLabels: { font: { size: 11 } },
+                        grid: { color: 'rgba(0,0,0,0.06)' },
+                    }
+                },
+            }
+        });
+    }
+
+    // Pie / Doughnut Chart
+    const pieCtx = document.getElementById('detailPieChart');
+    if (pieCtx) {
+        new Chart(pieCtx, {
+            type: 'doughnut',
+            data: {
+                labels: pieData.labels,
+                datasets: [{
+                    data: pieData.values,
+                    backgroundColor: [
+                        'rgba(220, 53, 69, 0.85)',
+                        'rgba(255, 193, 7, 0.85)',
+                        'rgba(13, 110, 253, 0.85)',
+                    ],
+                    borderColor: '#fff',
+                    borderWidth: 3,
+                    hoverOffset: 8,
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: (item) => {
+                                const pct = pieData.percentages[item.dataIndex];
+                                return ` ${item.label}: ${item.raw} kcal (${pct}%)`;
+                            }
+                        }
+                    },
+                    legend: { position: 'bottom' },
+                },
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

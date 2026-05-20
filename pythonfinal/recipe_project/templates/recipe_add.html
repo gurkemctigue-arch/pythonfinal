@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}新增食谱{% endblock %}
+
+{% block extra_head %}
+<style>
+    .step-textarea {
+        resize: vertical;
+        min-height: 80px;
+    }
+    .ing-row {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr auto;
+        gap: 0.5rem;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+    @media (max-width: 600px) {
+        .ing-row { grid-template-columns: 1fr 1fr auto; }
+        .ing-row .form-select:nth-child(3) { grid-column: 1 / 3; }
+    }
+    .add-ing-btn {
+        border: 2px dashed #ccc;
+        background: #fafafa;
+        color: #888;
+        border-radius: 8px;
+        padding: 0.5rem;
+        cursor: pointer;
+        text-align: center;
+        font-size: 0.85rem;
+        transition: all 0.2s;
+    }
+    .add-ing-btn:hover {
+        border-color: #4CAF50;
+        color: #4CAF50;
+        background: #f0fff0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 800px;">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0">
+            <i class="bi bi-journal-plus text-success me-2"></i>新增食谱
+        </h4>
+        <a href="{{ url_for('recipes_page') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>返回食谱库
+        </a>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" id="recipeForm">
+        <!-- 基本信息 -->
+        <div class="card mb-3">
+            <div class="card-header bg-white fw-bold">基本信息</div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">食谱名称 <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control" placeholder="如：蒜蓉西兰花" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">菜系</label>
+                        <select name="cuisine" class="form-select">
+                            {% for c in cuisine_options %}
+                            <option value="{{ c }}">{{ c }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">难度</label>
+                        <select name="difficulty" class="form-select">
+                            {% for d in difficulty_options %}
+                            <option value="{{ d }}">{{ d }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">准备时间（分钟）</label>
+                        <input type="number" name="prep_time" class="form-control" value="10" min="0">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">烹饪时间（分钟）</label>
+                        <input type="number" name="cook_time" class="form-control" value="20" min="0">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">标签（逗号分隔）</label>
+                        <input type="text" name="tags" class="form-control" placeholder="如：家常, 快手菜, 高蛋白">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">描述</label>
+                        <textarea name="description" class="form-control" rows="2" placeholder="简短描述这道菜的特点..."></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 食材 -->
+        <div class="card mb-3">
+            <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-basket me-2"></i>食材清单</span>
+                <span class="badge bg-light text-muted">至少添加1种食材</span>
+            </div>
+            <div class="card-body">
+                <div id="ingredientList">
+                    <!-- 初始一行 -->
+                    <div class="ing-row">
+                        <select name="ing_name" class="form-select form-select-sm">
+                            <option value="">选择食材...</option>
+                            {% for name, _ in ing_options %}
+                            <option value="{{ name }}">{{ name }}</option>
+                            {% endfor %}
+                        </select>
+                        <input type="number" name="ing_amount" class="form-control form-control-sm" placeholder="用量" step="0.1" min="0">
+                        <input type="text" name="ing_unit" class="form-control form-control-sm" placeholder="单位" value="g">
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeIng(this)" title="移除">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="add-ing-btn mt-2" onclick="addIng()">
+                    <i class="bi bi-plus"></i> 添加食材
+                </div>
+            </div>
+        </div>
+
+        <!-- 步骤 -->
+        <div class="card mb-3">
+            <div class="card-header bg-white fw-bold">烹饪步骤（每行一步）</div>
+            <div class="card-body">
+                <textarea name="steps" class="form-control step-textarea"
+                    placeholder="第1步：准备好所有食材&#10;第2步：热锅凉油...&#10;..."></textarea>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-success">
+                <i class="bi bi-check-lg me-1"></i>保存食谱
+            </button>
+            <a href="{{ url_for('recipes_page') }}" class="btn btn-outline-secondary">取消</a>
+        </div>
+    </form>
+</div>
+
+<script>
+function addIng() {
+    var list = document.getElementById('ingredientList');
+    var row = document.createElement('div');
+    row.className = 'ing-row';
+    var sel = document.querySelector('[name="ing_name"]').outerHTML.replace(' name="ing_name"', ' name="ing_name"');
+    sel = sel.replace(' value=""', ' value="" selected');
+    row.innerHTML = sel + `
+        <input type="number" name="ing_amount" class="form-control form-control-sm" placeholder="用量" step="0.1" min="0">
+        <input type="text" name="ing_unit" class="form-control form-control-sm" placeholder="单位" value="g">
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeIng(this)" title="移除">
+            <i class="bi bi-x-lg"></i>
+        </button>
+    `;
+    list.appendChild(row);
+}
+
+function removeIng(btn) {
+    var rows = document.querySelectorAll('.ing-row');
+    if (rows.length > 1) {
+        btn.closest('.ing-row').remove();
+    }
+}
+</script>
+{% endblock %}

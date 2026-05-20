@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+
+{% block title %}智能推荐{% endblock %}
+
+{% block extra_head %}
+<style>
+    .recommend-hero {
+        background: linear-gradient(135deg, #FF9800 0%, #E65100 100%);
+        color: white;
+        padding: 2.5rem 0;
+        margin-bottom: 2rem;
+    }
+    .method-tabs {
+        border-radius: 12px;
+        background: #f8f9fa;
+        padding: 0.5rem;
+        margin-bottom: 1.5rem;
+    }
+    .method-tabs .nav-link {
+        border-radius: 8px;
+        font-weight: 500;
+        color: #666;
+        border: none;
+        padding: 0.6rem 1.5rem;
+    }
+    .method-tabs .nav-link.active {
+        background: white;
+        color: #4CAF50;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .match-card {
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        transition: all 0.2s;
+        display: block;
+        text-decoration: none;
+        color: inherit;
+    }
+    .match-card:hover {
+        border-color: #4CAF50;
+        box-shadow: 0 3px 12px rgba(76,175,80,0.15);
+        transform: translateY(-2px);
+    }
+    .match-score {
+        font-size: 1.5rem;
+        font-weight: 700;
+    }
+    .match-score.high { color: #4CAF50; }
+    .match-score.mid { color: #FF9800; }
+    .match-score.low { color: #9E9E9E; }
+    .ingredient-chip {
+        display: inline-block;
+        padding: 0.2em 0.5em;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        margin: 0.15rem;
+    }
+    .ingredient-chip.matched {
+        background: #E8F5E9;
+        color: #2E7D32;
+    }
+    .ingredient-chip.missing {
+        background: #FFF3E0;
+        color: #E65100;
+    }
+    .result-card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    .no-results {
+        text-align: center;
+        padding: 3rem;
+        color: #aaa;
+    }
+    .tag-btn {
+        cursor: pointer;
+        border: 1px solid #dee2e6;
+        border-radius: 20px;
+        padding: 0.3em 0.8em;
+        font-size: 0.8rem;
+        background: white;
+        transition: all 0.2s;
+    }
+    .tag-btn.selected {
+        background: #4CAF50;
+        color: white;
+        border-color: #4CAF50;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="recommend-hero">
+    <div class="container">
+        <h4 class="fw-bold mb-1">
+            <i class="bi bi-stars me-2"></i>智能推荐
+        </h4>
+        <p class="mb-0 opacity-75">基于食材库存或偏好标签，获得个性化食谱推荐</p>
+    </div>
+</div>
+
+<div class="container">
+    <!-- 推荐方式切换 -->
+    <div class="method-tabs">
+        <ul class="nav nav-pills mb-0" id="recommendTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {% if action == 'by_inventory' %}active{% endif %}"
+                        id="inventory-tab" data-bs-toggle="pill"
+                        data-bs-target="#inventoryPane" type="button">
+                    <i class="bi bi-box-seam me-1"></i>按库存推荐
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {% if action == 'by_tags' %}active{% else %}{% if not action %}active{% endif %}{% endif %}"
+                        id="tags-tab" data-bs-toggle="pill"
+                        data-bs-target="#tagsPane" type="button">
+                    <i class="bi bi-tags me-1"></i>按标签推荐
+                </button>
+            </li>
+        </ul>
+    </div>
+
+    <!-- 方法1：按库存推荐 -->
+    <div class="tab-content" id="recommendTabContent">
+        <div class="tab-pane fade {% if action == 'by_inventory' %}show active{% endif %}"
+             id="inventoryPane" role="tabpanel">
+            <div class="card result-card mb-4" style="max-width: 700px; margin: 0 auto;">
+                <div class="card-body">
+                    <h6 class="fw-bold mb-3">
+                        <i class="bi bi-box-seam text-success me-2"></i>输入你已有的食材
+                    </h6>
+                    <form method="post" action="{{ url_for('recommend') }}">
+                        <input type="hidden" name="action" value="by_inventory">
+                        <textarea name="inventory" class="form-control mb-3"
+                                  rows="4"
+                                  placeholder="西红柿 200g, 鸡蛋 2个, 食用油 10g, 盐 2g">{{ request.form.get('inventory', '') }}</textarea>
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="bi bi-magic me-2"></i>智能匹配推荐
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            {% if action == 'by_inventory' and has_results %}
+            <div class="mt-4">
+                <h6 class="fw-bold mb-3">
+                    <i class="bi bi-check-circle text-success me-2"></i>
+                    推荐结果（基于你已有的 {{ user_ingredients|length }} 种食材）
+                </h6>
+                {% for item in match_results %}
+                <div class="match-card">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <div class="match-score {% if item.match_score >= 80 %}high{% elif item.match_score >= 50 %}mid{% else %}low{% endif %}">
+                                {{ item.match_score|int }}%
+                            </div>
+                            <div class="small text-muted">匹配度</div>
+                        </div>
+                        <div class="col">
+                            <div class="fw-bold mb-1">{{ item.recipe.name }}</div>
+                            <div class="small text-muted mb-2">
+                                {{ item.recipe.total_time }}分钟 ·
+                                {{ item.recipe.cuisine }} ·
+                                {{ item.recipe.difficulty }}
+                            </div>
+                            <div class="small">
+                                <div class="mb-1">
+                                    <span class="text-muted">已匹配：</span>
+                                    {% for ing in item.matched_ingredients[:4] %}
+                                    <span class="ingredient-chip matched">{{ ing }}</span>
+                                    {% endfor %}
+                                </div>
+                                {% if item.missing_ingredients %}
+                                <div>
+                                    <span class="text-muted">还需：</span>
+                                    {% for ing in item.missing_ingredients %}
+                                    <span class="ingredient-chip missing">{{ ing }}</span>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-auto text-end">
+                            <span class="badge bg-success">{{ item.recipe.calories|int }} kcal</span>
+                            <div class="small text-muted mt-1">
+                                P {{ item.nutrition.protein|int }}g ·
+                                F {{ item.nutrition.fat|int }}g ·
+                                C {{ item.nutrition.carbs|int }}g
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- 方法2：按标签推荐 -->
+        <div class="tab-pane fade {% if action == 'by_tags' %}show active{% endif %}"
+             id="tagsPane" role="tabpanel">
+            <div class="card result-card mb-4" style="max-width: 800px; margin: 0 auto;">
+                <div class="card-body">
+                    <h6 class="fw-bold mb-3">
+                        <i class="bi bi-tags text-success me-2"></i>设置筛选条件
+                    </h6>
+                    <form method="post" action="{{ url_for('recommend') }}">
+                        <input type="hidden" name="action" value="by_tags">
+
+                        <!-- 标签选择 -->
+                        <div class="mb-3">
+                            <label class="form-label small fw-500 text-muted">选择标签</label>
+                            <div class="d-flex flex-wrap gap-2">
+                                {% for tag in all_tags %}
+                                <button type="button" class="tag-btn {% if tag in selected_tags %}selected{% endif %}"
+                                        onclick="toggleTagRecommend(this, '{{ tag }}')">
+                                    {{ tag }}
+                                </button>
+                                {% endfor %}
+                            </div>
+                            <input type="hidden" name="tags" id="selectedTagsInput"
+                                   value="{{ selected_tags|join(',') if selected_tags else '' }}">
+                        </div>
+
+                        <!-- 热量范围 -->
+                        <div class="row g-3 mb-3">
+                            <div class="col-6">
+                                <label class="form-label small fw-500 text-muted">最低热量 (kcal)</label>
+                                <input type="number" name="min_cal" class="form-control"
+                                       value="{{ request.form.get('min_cal', 0) }}" min="0" step="50">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-500 text-muted">最高热量 (kcal)</label>
+                                <input type="number" name="max_cal" class="form-control"
+                                       value="{{ request.form.get('max_cal', 2000) }}" min="0" step="50">
+                            </div>
+                        </div>
+
+                        <!-- 时间和难度 -->
+                        <div class="row g-3 mb-3">
+                            <div class="col-6">
+                                <label class="form-label small fw-500 text-muted">最长耗时 (分钟)</label>
+                                <input type="number" name="max_time" class="form-control"
+                                       value="{{ request.form.get('max_time', 60) }}" min="1">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-500 text-muted">难度</label>
+                                <select name="difficulty" class="form-select">
+                                    <option value="">不限</option>
+                                    <option value="简单">简单</option>
+                                    <option value="中等">中等</option>
+                                    <option value="困难">困难</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="bi bi-search me-2"></i>开始筛选
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            {% if action == 'by_tags' and has_results %}
+            <div class="row g-3">
+                {% for recipe in results %}
+                <div class="col-sm-6 col-lg-4">
+                    <div class="card result-card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h6 class="fw-bold mb-0">{{ recipe.name }}</h6>
+                                <span class="badge bg-success">{{ recipe.calories|int }}kcal</span>
+                            </div>
+                            <div class="small text-muted mb-2">
+                                {{ recipe.total_time }}分钟 · {{ recipe.difficulty }} · {{ recipe.cuisine }}
+                            </div>
+                            <div class="mb-2">
+                                {% for tag in recipe.tags[:3] %}
+                                <span class="badge bg-light text-secondary border"
+                                      style="font-size: 0.7rem;">{{ tag }}</span>
+                                {% endfor %}
+                            </div>
+                            <div class="small">
+                                <div class="d-flex justify-content-between text-muted">
+                                    <span>营养均衡评分</span>
+                                    <span class="fw-bold text-success">{{ recipe.nutrition_score|int }}/100</span>
+                                </div>
+                                <div class="progress mt-1" style="height: 4px;">
+                                    <div class="progress-bar bg-success"
+                                         style="width: {{ recipe.nutrition_score }}%"></div>
+                                </div>
+                            </div>
+                            <div class="row text-center small mt-2">
+                                <div class="col-4">
+                                    <div class="fw-bold text-danger">{{ recipe.protein|int }}g</div>
+                                    <div class="text-muted">蛋白质</div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="fw-bold text-warning">{{ recipe.fat|int }}g</div>
+                                    <div class="text-muted">脂肪</div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="fw-bold text-info">{{ recipe.carbs|int }}g</div>
+                                    <div class="text-muted">碳水</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleTagRecommend(btn, tag) {
+    btn.classList.toggle('selected');
+    var input = document.getElementById('selectedTagsInput');
+    var selected = input.value ? input.value.split(',') : [];
+    var idx = selected.indexOf(tag);
+    if (idx >= 0) {
+        selected.splice(idx, 1);
+    } else {
+        selected.push(tag);
+    }
+    input.value = selected.join(',');
+}
+</script>
+{% endblock %}

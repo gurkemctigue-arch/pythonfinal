@@ -1,0 +1,223 @@
+{
+  "version": "1.0",
+  "export_time": null,
+  "recipe_count": 4,
+  "recipes": [
+    {
+      "name": "西红柿炒鸡蛋",
+      "cuisine": "家常菜",
+      "difficulty": "简单",
+      "prep_time": 10,
+      "cook_time": 15,
+      "total_time": 25,
+      "tags": [
+        "家常",
+        "快手菜",
+        "高蛋白"
+      ],
+      "description": "经典家常菜，酸甜可口，营养丰富",
+      "steps": [
+        "西红柿洗净切块，鸡蛋打散加少许盐",
+        "热锅凉油，倒入蛋液炒至凝固盛出",
+        "锅中留底油，放入西红柿翻炒出汁",
+        "加入炒好的鸡蛋，调入盐和糖翻炒均匀即可"
+      ],
+      "ingredients": [
+        {
+          "ingredient_name": "鸡蛋",
+          "amount": 2,
+          "unit": "个"
+        },
+        {
+          "ingredient_name": "西红柿",
+          "amount": 200,
+          "unit": "g"
+        },
+        {
+          "ingredient_name": "食用油",
+          "amount": 15,
+          "unit": "g"
+        },
+        {
+          "ingredient_name": "盐",
+          "amount": 2,
+          "unit": "g"
+        }
+      ],
+      "nutrition_total": {
+        "calories": 306.6,
+        "protein": 15.100000000000001,
+        "fat": 24.200000000000003,
+        "carbs": 8.8,
+        "fiber": 2.0,
+        "vitamin_a": 0.0,
+        "vitamin_c": 28.0,
+        "calcium": 56.0,
+        "iron": 2.0
+      },
+      "nutrition_macros": {
+        "protein_pct": 19.3,
+        "fat_pct": 69.5,
+        "carbs_pct": 11.2
+      }
+    },
+    {
+      "name": "清炒西兰花",
+      "cuisine": "家常菜",
+      "difficulty": "简单",
+      "prep_time": 5,
+      "cook_time": 10,
+      "total_time": 15,
+      "tags": [
+        "素食",
+        "低脂",
+        "高纤维",
+        "减肥"
+      ],
+      "description": "清爽可口的家常素菜，富含维生素C",
+      "steps": [
+        "西兰花洗净切小朵，用淡盐水浸泡10分钟",
+        "烧开水，加少许盐和油，放入西兰花焯烫30秒捞出",
+        "热锅凉油，爆香蒜末",
+        "倒入西兰花快速翻炒，加盐调味即可"
+      ],
+      "ingredients": [
+        {
+          "ingredient_name": "西兰花",
+          "amount": 300,
+          "unit": "g"
+        },
+        {
+          "ingredient_name": "食用油",
+          "amount": 10,
+          "unit": "g"
+        },
+        {
+          "ingredient_name": "盐",
+          "amount": 2,
+          "unit": "g"
+        }
+      ],
+      "nutrition_total": {
+        "calories": 169.4,
+        "protein": 8.399999999999999,
+        "fat": 11.2,
+        "carbs": 12.899999999999999,
+        "fiber": 7.800000000000001,
+        "vitamin_a": 0.0,
+        "vitamin_c": 267.0,
+        "calcium": 0.0,
+        "iron": 0.0
+      },
+      "nutrition_macros": {
+        "protein_pct": 18.1,
+        "fat_pct": 54.2,
+        "carbs_pct": 27.7
+      }
+    },
+    {
+      "name": "鸡胸肉沙拉",
+      "cuisine": "西餐",
+      "difficulty": "简单",
+      "prep_time": 15,
+      "cook_time": 20,
+      "total_time": 35,
+      "tags": [
+        "健身餐",
+        "高蛋白",
+        "低脂",
+        "减脂"
+      ],
+      "description": "健身人群首选，高蛋白低脂肪",
+      "steps": [
+        "鸡胸肉用盐和黑胡椒腌制10分钟",
+        "平底锅少油，将鸡胸肉煎至两面金黄熟透",
+        "鸡胸肉切片备用",
+        "西兰花和胡萝卜焯熟，铺在盘底",
+        "放上鸡胸肉片，可搭配沙拉酱食用"
+      ],
+      "ingredients": [
+        {
+          "ingredient_name": "鸡胸肉",
+          "amount": 150,
+          "unit": "g"
+        },
+        {
+          "ingredient_name": "西兰花",
+          "amount": 100,
+          "unit": "g"
+        },
+        {
+          "ingredient_name": "胡萝卜",
+          "amount": 50,
+          "unit": "g"
+        }
+      ],
+      "nutrition_total": {
+        "calories": 242.5,
+        "protein": 49.75,
+        "fat": 5.9,
+        "carbs": 8.15,
+        "fiber": 4.0,
+        "vitamin_a": 344.0,
+        "vitamin_c": 89.0,
+        "calcium": 0.0,
+        "iron": 1.5
+      },
+      "nutrition_macros": {
+        "protein_pct": 69.9,
+        "fat_pct": 18.7,
+        "carbs_pct": 11.5
+      }
+    },
+    {
+      "name": "番茄鸡蛋面",
+      "cuisine": "家常菜",
+      "difficulty": "简单",
+      "prep_time": 10,
+      "cook_time": 20,
+      "total_time": 30,
+      "tags": [
+        "主食",
+        "快手菜",
+        "暖胃"
+      ],
+      "description": "汤鲜面滑，番茄的酸甜与鸡蛋的嫩滑完美结合",
+      "steps": [
+        "西红柿切块，鸡蛋打散",
+        "水烧开下面条煮至8分熟捞出",
+        "另起锅炒鸡蛋盛出",
+        "锅中炒西红柿出汁，加水煮开",
+        "放入面条和鸡蛋，加盐调味即可"
+      ],
+      "ingredients": [
+        {
+          "ingredient_name": "鸡蛋",
+          "amount": 2,
+          "unit": "个"
+        },
+        {
+          "ingredient_name": "西红柿",
+          "amount": 150,
+          "unit": "g"
+        }
+      ],
+      "nutrition_total": {
+        "calories": 166.5,
+        "protein": 14.65,
+        "fat": 9.100000000000001,
+        "carbs": 7.1499999999999995,
+        "fiber": 1.5,
+        "vitamin_a": 0.0,
+        "vitamin_c": 21.0,
+        "calcium": 56.0,
+        "iron": 2.0
+      },
+      "nutrition_macros": {
+        "protein_pct": 34.7,
+        "fat_pct": 48.4,
+        "carbs_pct": 16.9
+      }
+    }
+  ]
+}

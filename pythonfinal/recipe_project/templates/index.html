@@ -1,0 +1,736 @@
+{% extends "base.html" %}
+
+{% block title %}营养看板{% endblock %}
+
+{% block extra_head %}
+<style>
+    .hero-section {
+        background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
+        color: white;
+        padding: 3rem 0;
+        margin-bottom: 2rem;
+    }
+    .hero-section h1 {
+        font-weight: 700;
+        font-size: 2.2rem;
+    }
+    .stat-card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .stat-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+    }
+    .stat-icon {
+        font-size: 2.5rem;
+        opacity: 0.9;
+    }
+    .chart-card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        overflow: hidden;
+    }
+    .chart-card .card-body {
+        padding: 1.25rem;
+    }
+    .tag-cloud .badge {
+        font-weight: 400;
+        font-size: 0.8rem;
+        padding: 0.35em 0.65em;
+        cursor: pointer;
+        transition: all 0.2s;
+        color: #388E3C;
+        border: 1px solid rgba(76, 175, 80, 0.3);
+    }
+    .tag-cloud .badge:hover {
+        transform: scale(1.1);
+    }
+    .recipe-mini-card {
+        border-radius: 10px;
+        border: 1px solid #e9ecef;
+        transition: all 0.2s;
+        text-decoration: none;
+        color: inherit;
+        display: block;
+    }
+    .recipe-mini-card:hover {
+        border-color: #4CAF50;
+        box-shadow: 0 3px 12px rgba(76,175,80,0.15);
+        transform: translateY(-2px);
+    }
+    .nutrition-badge {
+        font-size: 0.75rem;
+        padding: 0.25em 0.5em;
+    }
+    .section-title {
+        font-weight: 600;
+        font-size: 1.1rem;
+        color: #333;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #4CAF50;
+        display: inline-block;
+    }
+    .placeholder-chart {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 2rem;
+        text-align: center;
+        color: #999;
+        min-height: 200px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+    }
+    /* 确保 Chart.js canvas 可见 */
+    canvas {
+        display: block !important;
+        max-width: 100%;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero 区域 -->
+<div class="hero-section">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-lg-8">
+                <h1><i class="bi bi-graph-up-arrow me-2"></i>营养数据看板</h1>
+                <p class="lead opacity-75 mb-0">
+                    实时统计 · 营养对比 · 趋势分析
+                </p>
+            </div>
+            <div class="col-lg-4 text-lg-end mt-3 mt-lg-0">
+                {% if matplotlib_available %}
+                <span class="badge bg-light text-success fs-6">
+                    <i class="bi bi-check-circle-fill me-1"></i>图表引擎已就绪
+                </span>
+                {% else %}
+                <span class="badge bg-warning text-dark fs-6">
+                    <i class="bi bi-exclamation-triangle me-1"></i>图表引擎未安装
+                </span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+    <!-- 统计卡片 -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3">
+            <a href="{{ url_for('recipes_page') }}" class="text-decoration-none">
+                <div class="card stat-card bg-primary bg-gradient text-white" style="cursor:pointer;">
+                    <div class="card-body d-flex align-items-center">
+                        <i class="bi bi-journal-richtext stat-icon me-3"></i>
+                        <div>
+                            <div class="fw-bold fs-4">{{ stats.recipe_count }}</div>
+                            <div class="small opacity-75">收录食谱</div>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-lg-3">
+            <a href="{{ url_for('ingredients_page') }}" class="text-decoration-none">
+                <div class="card stat-card bg-success bg-gradient text-white" style="cursor:pointer;">
+                    <div class="card-body d-flex align-items-center">
+                        <i class="bi bi-basket stat-icon me-3"></i>
+                        <div>
+                            <div class="fw-bold fs-4">{{ stats.ingredient_count }}</div>
+                            <div class="small opacity-75">食材库</div>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card stat-card bg-info bg-gradient text-white">
+                <div class="card-body d-flex align-items-center">
+                    <i class="bi bi-lightning stat-icon me-3"></i>
+                    <div>
+                        <div class="fw-bold fs-4">{{ stats.avg_calories }}</div>
+                        <div class="small opacity-75">平均热量(kcal)</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card stat-card bg-warning bg-gradient text-dark">
+                <div class="card-body d-flex align-items-center">
+                    <i class="bi bi-tag stat-icon me-3"></i>
+                    <div>
+                        <div class="fw-bold fs-4">{{ stats.tag_counts|length }}</div>
+                        <div class="small opacity-75">标签分类</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图表区域 -->
+    <div class="row g-4 mb-4">
+        <!-- 热量对比柱状图 -->
+        <div class="col-lg-7">
+            <div class="card chart-card h-100">
+                <div class="card-header bg-white border-0 pt-3 pb-0">
+                    <span class="section-title">
+                        <i class="bi bi-bar-chart me-2"></i>热量对比
+                    </span>
+                    <select id="barRecipeSelect" class="form-select form-select-sm float-end"
+                            style="width:auto;max-width:200px;" onchange="updateBarChart()">
+                        <option value="top8">热量最高 8 道</option>
+                        <option value="all">全部食谱</option>
+                    </select>
+                </div>
+                <div class="card-body" style="min-height:300px;">
+                    <canvas id="calorieBarChart" width="600" height="280"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 营养雷达图 -->
+        <div class="col-lg-5">
+            <div class="card chart-card h-100">
+                <div class="card-header bg-white border-0 pt-3 pb-0 d-flex align-items-center">
+                    <span class="section-title">
+                        <i class="bi bi-hexagon me-2"></i>营养雷达
+                    </span>
+                    <select id="radarRecipeSelect" class="form-select form-select-sm ms-auto"
+                            style="width:auto;max-width:160px;" onchange="updateRadarChart()">
+                    </select>
+                </div>
+                <div class="card-body" style="min-height:300px;">
+                    <canvas id="radarChart" width="320" height="280"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 多食谱雷达对比 -->
+        <div class="col-lg-6">
+            <div class="card chart-card h-100">
+                <div class="card-header bg-white border-0 pt-3 pb-0">
+                    <span class="section-title">
+                        <i class="bi bi-shuffle me-2"></i>三食谱营养对比
+                    </span>
+                    <div class="d-flex gap-2 float-end" style="max-width:520px;">
+                        <select id="multiRadar1" class="form-select form-select-sm"
+                                style="width:auto;min-width:120px;" onchange="updateMultiRadarChart()">
+                            <option value="">— 选择食谱 1 —</option>
+                        </select>
+                        <select id="multiRadar2" class="form-select form-select-sm"
+                                style="width:auto;min-width:120px;" onchange="updateMultiRadarChart()">
+                            <option value="">— 选择食谱 2 —</option>
+                        </select>
+                        <select id="multiRadar3" class="form-select form-select-sm"
+                                style="width:auto;min-width:120px;" onchange="updateMultiRadarChart()">
+                            <option value="">— 选择食谱 3 —</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="card-body" style="min-height:300px;">
+                    <canvas id="multiRadarChart" width="450" height="280"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 每周热量趋势 -->
+        <div class="col-lg-6">
+            <div class="card chart-card h-100">
+                <div class="card-header bg-white border-0 pt-3 pb-0">
+                    <span class="section-title">
+                        <i class="bi bi-line-chart me-2"></i>每周热量趋势
+                    </span>
+                    <small class="text-muted ms-2" id="avgCalLabel">日均 — kcal</small>
+                </div>
+                <div class="card-body" style="min-height:300px;">
+                    <canvas id="trendChart" width="450" height="280"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 宏量营养素分布 -->
+        <div class="col-12">
+            <div class="card chart-card">
+                <div class="card-header bg-white border-0 pt-3 pb-0">
+                    <span class="section-title">
+                        <i class="bi bi-pie-chart me-2"></i>每周宏量营养素分布
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <canvas id="macroPieChart" width="320" height="280"></canvas>
+                        </div>
+                        <div class="col-md-6 d-flex align-items-center">
+                            <div id="macroSummary" class="w-100"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 食谱卡片区 -->
+    <div class="mb-5">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <span class="section-title mb-0">
+                <i class="bi bi-grid-3x3-gap me-2"></i>食谱速览
+            </span>
+            <a href="{{ url_for('recipes_page') }}" class="btn btn-sm btn-outline-success">
+                查看全部 <i class="bi bi-arrow-right ms-1"></i>
+            </a>
+        </div>
+        <div class="row g-3">
+            {% for recipe in recipes[:4] %}
+            <div class="col-md-6 col-lg-3">
+                <a href="{{ url_for('recipe_detail', name=recipe.name) }}" class="recipe-mini-card">
+                    <div class="card border-0 h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h6 class="fw-bold mb-0 text-truncate" style="max-width: 180px;">
+                                    {{ recipe.name }}
+                                </h6>
+                                <span class="badge bg-success nutrition-badge">
+                                    {{ recipe.calories|int }}kcal
+                                </span>
+                            </div>
+                            <div class="small text-muted mb-2">
+                                <i class="bi bi-clock me-1"></i>{{ recipe.total_time }}分钟
+                                <span class="ms-2">
+                                    <i class="bi bi-people me-1"></i>{{ recipe.difficulty }}
+                                </span>
+                            </div>
+                            <!-- 营养条 -->
+                            <div class="progress mt-2" style="height: 5px;">
+                                <div class="progress-bar bg-danger" role="progressbar"
+                                     style="width: {{ (recipe.protein / 50 * 100)|int }}%"></div>
+                                <div class="progress-bar bg-warning" role="progressbar"
+                                     style="width: {{ (recipe.fat / 30 * 100)|int }}%"></div>
+                                <div class="progress-bar bg-info" role="progressbar"
+                                     style="width: {{ (recipe.carbs / 80 * 100)|int }}%"></div>
+                            </div>
+                            <div class="d-flex justify-content-between small text-muted mt-1">
+                                <span>P {{ recipe.protein|int }}g</span>
+                                <span>F {{ recipe.fat|int }}g</span>
+                                <span>C {{ recipe.carbs|int }}g</span>
+                            </div>
+                            {% if recipe.tags %}
+                            <div class="mt-2">
+                                {% for tag in recipe.tags[:2] %}
+                                <span class="badge bg-light text-dark border">{{ tag }}</span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- 标签云 -->
+    {% if stats.tag_counts %}
+    <div class="mb-5">
+        <span class="section-title">
+            <i class="bi bi-tags me-2"></i>热门标签
+        </span>
+        <div class="tag-cloud mt-3">
+            {% for tag, count in stats.tag_counts.items() %}
+            <a href="{{ url_for('recipes_page') }}?tag={{ tag }}"
+               class="badge me-2 mb-2"
+               style="color:#388E3C;border:1px solid rgba(76,175,80,0.35);background:rgba(76,175,80,0.1);">
+                {{ tag }} ({{ count }})
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+{% endif %}
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Inject chart data globally for dropdown switches
+window.__CHART_DATA__ = {{ chart_data | tojson | safe }};
+
+// ================================================================
+// Chart.js 动态图表初始化
+// ================================================================
+
+var calorieBarChart = null;
+var radarChart = null;
+var multiRadarChart = null;
+var trendChart = null;
+var macroPieChart = null;
+
+var COLORS = {
+    protein: { bg: 'rgba(220, 53, 69, 0.75)', border: 'rgba(220, 53, 69, 1)' },
+    fat: { bg: 'rgba(255, 193, 7, 0.75)', border: 'rgba(255, 193, 7, 1)' },
+    carbs: { bg: 'rgba(13, 110, 253, 0.75)', border: 'rgba(13, 110, 253, 1)' },
+    recipes: [
+        { bg: 'rgba(76, 175, 80, 0.6)', border: 'rgba(76, 175, 80, 1)' },
+        { bg: 'rgba(255, 152, 0, 0.6)', border: 'rgba(255, 152, 0, 1)' },
+        { bg: 'rgba(156, 39, 176, 0.6)', border: 'rgba(156, 39, 176, 1)' },
+        { bg: 'rgba(244, 67, 54, 0.6)', border: 'rgba(244, 67, 54, 1)' },
+    ],
+    macro: ['rgba(220, 53, 69, 0.8)', 'rgba(255, 193, 7, 0.8)', 'rgba(13, 110, 253, 0.8)'],
+};
+
+Chart.defaults.font.family = "'Noto Sans SC', 'Helvetica Neue', Arial, sans-serif";
+Chart.defaults.color = '#666';
+Chart.defaults.plugins.legend.labels.usePointStyle = true;
+Chart.defaults.plugins.legend.labels.padding = 16;
+
+function destroyChart(chart) { if (chart) { chart.destroy(); chart = null; } }
+
+function renderCalorieBar(labels, protein, fat, carbs) {
+    destroyChart(calorieBarChart);
+    var ctx = document.getElementById('calorieBarChart');
+    if (!ctx) return;
+    calorieBarChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: '蛋白质 (g)', data: protein, backgroundColor: COLORS.protein.bg, borderColor: COLORS.protein.border, borderWidth: 1 },
+                { label: '脂肪 (g)', data: fat, backgroundColor: COLORS.fat.bg, borderColor: COLORS.fat.border, borderWidth: 1 },
+                { label: '碳水 (g)', data: carbs, backgroundColor: COLORS.carbs.bg, borderColor: COLORS.carbs.border, borderWidth: 1 },
+            ]
+        },
+        options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { position: 'bottom' } },
+            scales: {
+                x: { stacked: true, grid: { display: false } },
+                y: { stacked: true, beginAtZero: true, title: { display: true, text: '重量 (g)' } },
+            },
+        }
+    });
+}
+
+function renderRadarChart(labels, values, recipeName) {
+    destroyChart(radarChart);
+    var ctx = document.getElementById('radarChart');
+    if (!ctx) return;
+    radarChart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: recipeName,
+                data: values,
+                backgroundColor: 'rgba(76, 175, 80, 0.25)',
+                borderColor: 'rgba(76, 175, 80, 1)',
+                borderWidth: 2,
+                pointBackgroundColor: 'rgba(76, 175, 80, 1)',
+                pointRadius: 4,
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+                r: {
+                    beginAtZero: true, max: 100,
+                    ticks: { stepSize: 20, backdropColor: 'transparent' },
+                    pointLabels: { font: { size: 11 } },
+                    grid: { color: 'rgba(0,0,0,0.06)' },
+                }
+            },
+        }
+    });
+}
+
+function renderMultiRadar(labels, recipes) {
+    destroyChart(multiRadarChart);
+    var ctx = document.getElementById('multiRadarChart');
+    if (!ctx) return;
+    multiRadarChart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: labels,
+            datasets: recipes.map(function(r, i) {
+                return {
+                    label: r.name + ' (' + r.calories + 'kcal)',
+                    data: r.values,
+                    backgroundColor: COLORS.recipes[i % 4].bg,
+                    borderColor: COLORS.recipes[i % 4].border,
+                    borderWidth: 2,
+                    pointRadius: 3,
+                };
+            })
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } },
+            scales: {
+                r: {
+                    beginAtZero: true, max: 100,
+                    ticks: { stepSize: 20, backdropColor: 'transparent' },
+                    pointLabels: { font: { size: 11 } },
+                    grid: { color: 'rgba(0,0,0,0.06)' },
+                }
+            },
+        }
+    });
+}
+
+function renderTrend(labels, calories, protein, fat, carbs) {
+    destroyChart(trendChart);
+    var ctx = document.getElementById('trendChart');
+    if (!ctx) return;
+    trendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: '总热量 (kcal)', data: calories, borderColor: 'rgba(76,175,80,1)', backgroundColor: 'rgba(76,175,80,0.1)', borderWidth: 2.5, fill: true, tension: 0.3, yAxisID: 'y', pointRadius: 4 },
+                { label: '蛋白质 (g)', data: protein, borderColor: COLORS.protein.border, borderWidth: 1.5, borderDash: [5, 3], tension: 0.3, yAxisID: 'y1', pointRadius: 3 },
+                { label: '脂肪 (g)', data: fat, borderColor: COLORS.fat.border, borderWidth: 1.5, borderDash: [5, 3], tension: 0.3, yAxisID: 'y1', pointRadius: 3 },
+                { label: '碳水 (g)', data: carbs, borderColor: COLORS.carbs.border, borderWidth: 1.5, borderDash: [5, 3], tension: 0.3, yAxisID: 'y1', pointRadius: 3 },
+            ]
+        },
+        options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { position: 'bottom' } },
+            scales: {
+                y: { type: 'linear', position: 'left', title: { display: true, text: '热量 (kcal)' }, grid: { color: 'rgba(0,0,0,0.05)' } },
+                y1: { type: 'linear', position: 'right', title: { display: true, text: '重量 (g)' }, grid: { drawOnChartArea: false } },
+                x: { grid: { display: false } },
+            },
+        }
+    });
+    var avgCal = Math.round(calories.reduce(function(a, b) { return a + b; }, 0) / calories.length);
+    var labelEl = document.getElementById('avgCalLabel');
+    if (labelEl) labelEl.textContent = '日均 ' + avgCal + ' kcal';
+}
+
+function renderMacroPie(labels, values, percentages) {
+    destroyChart(macroPieChart);
+    var ctx = document.getElementById('macroPieChart');
+    if (!ctx) return;
+    macroPieChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{ data: values, backgroundColor: COLORS.macro, borderColor: '#fff', borderWidth: 3, hoverOffset: 8 }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: { callbacks: { label: function(item) { return ' ' + item.label + ': ' + item.raw + 'g (' + percentages[item.dataIndex] + '%)'; } } }
+            },
+        }
+    });
+    var sum = values.reduce(function(a, b) { return a + b; }, 0);
+    var summaryEl = document.getElementById('macroSummary');
+    if (summaryEl) {
+        summaryEl.innerHTML = '<h6 class="fw-bold mb-3">每周宏量营养素总摄入</h6>' +
+            '<div class="d-flex justify-content-between mb-1"><span><span style="display:inline-block;width:12px;height:12px;background:rgba(220,53,69,0.8);border-radius:2px;margin-right:6px;"></span>蛋白质</span><strong class="text-danger">' + values[0] + 'g <small class="text-muted">(' + percentages[0] + '%)</small></strong></div>' +
+            '<div class="d-flex justify-content-between mb-1"><span><span style="display:inline-block;width:12px;height:12px;background:rgba(255,193,7,0.8);border-radius:2px;margin-right:6px;"></span>脂肪</span><strong class="text-warning">' + values[1] + 'g <small class="text-muted">(' + percentages[1] + '%)</small></strong></div>' +
+            '<div class="d-flex justify-content-between mb-1"><span><span style="display:inline-block;width:12px;height:12px;background:rgba(13,110,253,0.8);border-radius:2px;margin-right:6px;"></span>碳水</span><strong class="text-primary">' + values[2] + 'g <small class="text-muted">(' + percentages[2] + '%)</small></strong></div>' +
+            '<hr><div class="d-flex justify-content-between"><span class="small text-muted">总计热量</span><strong>≈ ' + Math.round(sum * 4.2) + ' kcal</strong></div>';
+    }
+}
+
+// ---- 下拉切换逻辑 ----
+
+function updateBarChart() {
+    var cd = window.__CHART_DATA__;
+    if (!cd || !cd.calorie_bar || !cd.calorie_bar.all) return;
+    var sel = document.getElementById('barRecipeSelect');
+    var val = sel ? sel.value : 'top8';
+    var all = cd.calorie_bar.all;
+    var sorted = all.slice().sort(function(a, b) {
+        return (b.protein*4 + b.fat*9 + b.carbs*4) - (a.protein*4 + a.fat*9 + a.carbs*4);
+    });
+    var n = val === 'all' ? sorted.length : 8;
+    var top = sorted.slice(0, n);
+    renderCalorieBar(
+        top.map(function(r) { return r.name; }),
+        top.map(function(r) { return r.protein; }),
+        top.map(function(r) { return r.fat; }),
+        top.map(function(r) { return r.carbs; })
+    );
+}
+
+function updateRadarChart() {
+    var sel = document.getElementById('radarRecipeSelect');
+    var recipeName = sel ? sel.value : '';
+    var cd = window.__CHART_DATA__;
+    if (!cd || !cd.calorie_bar || !cd.calorie_bar.all) return;
+    var all = cd.calorie_bar.all;
+    var recipe = null;
+    for (var i = 0; i < all.length; i++) {
+        if (all[i].name === recipeName) { recipe = all[i]; break; }
+    }
+    if (!recipe) return;
+    var rawVals = [
+        Math.min(recipe.protein / 50 * 100, 100),
+        Math.min(recipe.fat / 30 * 100, 100),
+        Math.min(recipe.carbs / 80 * 100, 100),
+        50, 50, 50,
+    ];
+    renderRadarChart(['蛋白质', '脂肪', '碳水', '纤维', '维生素A', '维生素C'], rawVals, recipeName);
+}
+
+function updateMultiRadarChart() {
+    var sel1 = document.getElementById('multiRadar1');
+    var sel2 = document.getElementById('multiRadar2');
+    var sel3 = document.getElementById('multiRadar3');
+    var cd = window.__CHART_DATA__;
+    if (!cd || !cd.calorie_bar || !cd.calorie_bar.all) return;
+    var all = cd.calorie_bar.all;
+
+    var selected = [sel1, sel2, sel3].map(function(sel) {
+        if (!sel || !sel.value) return null;
+        for (var i = 0; i < all.length; i++) {
+            if (all[i].name === sel.value) return all[i];
+        }
+        return null;
+    }).filter(function(r) { return r !== null; });
+
+    if (selected.length === 0) return;
+
+    var recipes = selected.map(function(r) {
+        return {
+            name: r.name,
+            calories: Math.round(r.protein*4 + r.fat*9 + r.carbs*4),
+            values: [
+                Math.min(r.protein / 50 * 100, 100),
+                Math.min(r.fat / 30 * 100, 100),
+                Math.min(r.carbs / 80 * 100, 100),
+                50, 50, 50,
+            ]
+        };
+    });
+    renderMultiRadar(['蛋白质', '脂肪', '碳水', '纤维', '维生素A', '维生素C'], recipes);
+}
+
+function refreshTrendAndMacro(days, targetCalories) {
+    var body = {};
+    if (days !== undefined) body.days = days;
+    if (targetCalories !== undefined) body.target_calories = targetCalories;
+    fetch('/api/charts/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        if (!data.success) return;
+        renderTrend(data.trend.labels, data.trend.calories, data.trend.protein, data.trend.fat, data.trend.carbs);
+        renderMacroPie(data.macro_dist.labels, data.macro_dist.values, data.macro_dist.percentages);
+    })
+    .catch(function(e) { console.error('[Charts] 刷新失败:', e); });
+}
+
+// ---- 页面初始化 ----
+(function() {
+    try {
+        var chartData = {{ chart_data | tojson | safe }};
+        window.__CHART_DATA__ = chartData;
+        if (!chartData) { console.error('[Charts] chartData is null!'); return; }
+        console.log('[Charts] 初始化, 数据条目:', Object.keys(chartData));
+
+        var bar = chartData.calorie_bar;
+
+        // 1. 热量柱状图
+        if (bar && bar.labels && bar.labels.length > 0) {
+            renderCalorieBar(bar.labels, bar.protein, bar.fat, bar.carbs);
+        }
+
+        // 2. 雷达图下拉（填充所有食谱）
+        var radarSel = document.getElementById('radarRecipeSelect');
+        if (radarSel && bar && bar.all) {
+            radarSel.innerHTML = '';
+            bar.all.forEach(function(r) {
+                var opt = document.createElement('option');
+                opt.value = r.name;
+                opt.textContent = r.name;
+                radarSel.appendChild(opt);
+            });
+            if (radarSel.options.length > 0) radarSel.options[0].selected = true;
+        }
+        if (chartData.radar) {
+            renderRadarChart(chartData.radar.labels, chartData.radar.values, chartData.radar.recipe);
+        }
+
+        // 3. 三食谱雷达对比（3个独立下拉框）
+        var multiSel1 = document.getElementById('multiRadar1');
+        var multiSel2 = document.getElementById('multiRadar2');
+        var multiSel3 = document.getElementById('multiRadar3');
+        var selects = [multiSel1, multiSel2, multiSel3];
+        if (bar && bar.all) {
+            var sorted = bar.all.slice().sort(function(a, b) {
+                return (b.protein*4+b.fat*9+b.carbs*4) - (a.protein*4+a.fat*9+a.carbs*4);
+            });
+            selects.forEach(function(sel) {
+                if (!sel) return;
+                sel.innerHTML = '<option value="">— 选择食谱 —</option>';
+                sorted.forEach(function(r) {
+                    var opt = document.createElement('option');
+                    opt.value = r.name;
+                    opt.textContent = r.name + ' (' + Math.round(r.protein*4+r.fat*9+r.carbs*4) + 'kcal)';
+                    sel.appendChild(opt);
+                });
+            });
+            // 默认选中热量最高的3道
+            if (sorted.length >= 3) {
+                if (multiSel1) multiSel1.value = sorted[0].name;
+                if (multiSel2) multiSel2.value = sorted[1].name;
+                if (multiSel3) multiSel3.value = sorted[2].name;
+            } else if (sorted.length === 2) {
+                if (multiSel1) multiSel1.value = sorted[0].name;
+                if (multiSel2) multiSel2.value = sorted[1].name;
+            } else if (sorted.length === 1) {
+                if (multiSel1) multiSel1.value = sorted[0].name;
+            }
+            // 渲染默认3道
+            var defaultRecipes = sorted.slice(0, 3).map(function(r) {
+                return {
+                    name: r.name,
+                    calories: Math.round(r.protein*4+r.fat*9+r.carbs*4),
+                    values: [
+                        Math.min(r.protein/50*100,100),
+                        Math.min(r.fat/30*100,100),
+                        Math.min(r.carbs/80*100,100), 50, 50, 50,
+                    ]
+                };
+            });
+            renderMultiRadar(['蛋白质', '脂肪', '碳水', '纤维', '维生素A', '维生素C'], defaultRecipes);
+        }
+
+        // 4. 热量趋势
+        if (chartData.trend) {
+            var td = chartData.trend;
+            renderTrend(td.labels, td.calories, td.protein, td.fat, td.carbs);
+        }
+
+        // 5. 宏量营养素饼图
+        if (chartData.macro_dist) {
+            var md = chartData.macro_dist;
+            renderMacroPie(md.labels, md.values, md.percentages);
+        }
+
+        console.log('[Charts] 全部图表渲染完成!');
+    } catch (e) {
+        console.error('[Charts] 渲染出错:', e.message, e.stack);
+    }
+})();
+</script>
+
+{% endblock %}
+</div>

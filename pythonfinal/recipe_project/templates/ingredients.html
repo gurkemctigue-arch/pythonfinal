@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}食材库{% endblock %}
+
+{% block extra_head %}
+<style>
+    .ing-card {
+        border: 1px solid #e9ecef;
+        border-radius: 10px;
+        transition: all 0.2s;
+        text-decoration: none;
+        color: inherit;
+        display: block;
+    }
+    .ing-card:hover {
+        border-color: #4CAF50;
+        box-shadow: 0 3px 12px rgba(76,175,80,0.15);
+        transform: translateY(-2px);
+    }
+    .category-header {
+        background: linear-gradient(135deg, #4CAF50, #2E7D32);
+        color: white;
+        padding: 0.6rem 1rem;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.95rem;
+        margin-bottom: 0.75rem;
+    }
+    .ing-item {
+        padding: 0.6rem 0.75rem;
+        border-bottom: 1px solid #f0f0f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .ing-item:last-child { border-bottom: none; }
+    .ing-item .ing-name {
+        font-weight: 500;
+        color: #333;
+    }
+    .ing-item .ing-nutrition {
+        font-size: 0.75rem;
+        color: #888;
+    }
+    .ing-item .ing-actions {
+        display: flex;
+        gap: 0.25rem;
+    }
+    .delete-btn {
+        background: none;
+        border: none;
+        color: #dc3545;
+        cursor: pointer;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+    }
+    .delete-btn:hover {
+        background: #fee;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- 页面标题 -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="fw-bold mb-1">
+                <i class="bi bi-basket text-success me-2"></i>食材库
+            </h4>
+            <p class="text-muted small mb-0">
+                共收录 <strong class="text-success">{{ total_count }}</strong> 种食材
+            </p>
+        </div>
+        <a href="{{ url_for('ingredient_add') }}" class="btn btn-success">
+            <i class="bi bi-plus-lg me-1"></i>新增食材
+        </a>
+    </div>
+
+    <!-- 食材分类展示 -->
+    {% for category, items in categories.items() %}
+    <div class="mb-4">
+        <div class="category-header">
+            <i class="bi bi-folder-fill me-2"></i>{{ category }}
+            <span class="badge bg-light text-dark ms-2">{{ items|length }}种</span>
+        </div>
+        <div class="card">
+            {% for ing in items %}
+            <div class="ing-item">
+                <div>
+                    <div class="ing-name">{{ ing.name }}</div>
+                    <div class="ing-nutrition">
+                        热量 {{ ing.calories }} kcal ·
+                        蛋白质 {{ ing.protein }}g ·
+                        脂肪 {{ ing.fat }}g ·
+                        碳水 {{ ing.carbs }}g
+                    </div>
+                </div>
+                {% if ing.id %}
+                <form action="{{ url_for('ingredient_delete', ingredient_id=ing.id) }}" method="POST"
+                      onsubmit="return confirm('确认删除「{{ ing.name }}」？')">
+                    <button type="submit" class="delete-btn" title="删除">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+
+    {% if total_count == 0 %}
+    <div class="text-center py-5 text-muted">
+        <i class="bi bi-basket2 fs-1 mb-3"></i>
+        <p>食材库为空，<a href="{{ url_for('ingredient_add') }}">立即添加</a></p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

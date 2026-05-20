@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+
+{% block title %}数据管理 - 导入/导出{% endblock %}
+
+{% block extra_head %}
+<style>
+    .io-card {
+        border: none;
+        border-radius: 16px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        overflow: hidden;
+    }
+    .io-card .card-header {
+        border: none;
+        padding: 1.25rem 1.5rem;
+        font-weight: 600;
+        font-size: 1.05rem;
+    }
+    .io-card .card-body {
+        padding: 1.5rem;
+    }
+    .export-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 1.25rem;
+        border: 1px solid #e9ecef;
+        border-radius: 10px;
+        margin-bottom: 0.75rem;
+        transition: all 0.2s;
+    }
+    .export-item:hover {
+        border-color: #4CAF50;
+        background: #f8fff8;
+    }
+    .export-item:last-child { margin-bottom: 0; }
+    .export-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.3rem;
+        margin-right: 1rem;
+        flex-shrink: 0;
+    }
+    .upload-zone {
+        border: 2px dashed #dee2e6;
+        border-radius: 12px;
+        padding: 2.5rem 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        background: #fafafa;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+        border-color: #4CAF50;
+        background: #f0fff0;
+    }
+    .upload-zone input[type="file"] {
+        display: none;
+    }
+    .json-preview {
+        background: #1e1e1e;
+        color: #d4d4d4;
+        border-radius: 8px;
+        padding: 1rem;
+        font-family: 'Courier New', monospace;
+        font-size: 0.8rem;
+        max-height: 280px;
+        overflow: auto;
+        white-space: pre;
+    }
+    .badge-pill {
+        border-radius: 50px;
+        padding: 0.4em 0.9em;
+        font-weight: 500;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 760px;">
+
+    <!-- 页面标题 -->
+    <div class="mb-4">
+        <h4 class="fw-bold mb-1">
+            <i class="bi bi-arrow-down-up text-success me-2"></i>数据管理
+        </h4>
+        <p class="text-muted small mb-0">
+            导出系统中的食谱和食材数据为 JSON 文件，或从外部 JSON 文件导入数据。
+        </p>
+    </div>
+
+    <!-- 提示信息 -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} alert-dismissible fade show" role="alert">
+        <i class="bi {{ 'bi-check-circle-fill' if category == 'success' else 'bi-exclamation-triangle-fill' }} me-2"></i>{{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+    {% endwith %}
+
+    <div class="row g-4">
+
+        <!-- 左侧：导出 -->
+        <div class="col-md-6">
+            <div class="card io-card h-100">
+                <div class="card-header bg-success bg-gradient text-white">
+                    <i class="bi bi-download me-2"></i>导出数据
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">
+                        将数据库中的所有食谱或食材导出为 JSON 文件，方便备份或迁移。
+                    </p>
+
+                    <div class="export-item">
+                        <div class="d-flex align-items-center">
+                            <div class="export-icon bg-danger bg-opacity-10 text-danger">
+                                <i class="bi bi-journal-richtext"></i>
+                            </div>
+                            <div>
+                                <div class="fw-semibold">导出食谱</div>
+                                <div class="small text-muted">{{ stats.recipe_count|default(32) }} 道食谱，含营养数据</div>
+                            </div>
+                        </div>
+                        <a href="{{ url_for('export_recipes') }}" class="btn btn-success btn-sm">
+                            <i class="bi bi-download me-1"></i>下载
+                        </a>
+                    </div>
+
+                    <div class="export-item">
+                        <div class="d-flex align-items-center">
+                            <div class="export-icon bg-warning bg-opacity-10 text-warning">
+                                <i class="bi bi-basket"></i>
+                            </div>
+                            <div>
+                                <div class="fw-semibold">导出食材</div>
+                                <div class="small text-muted">{{ stats.ingredient_count|default(60) }} 种食材，含营养成分</div>
+                            </div>
+                        </div>
+                        <a href="{{ url_for('export_ingredients') }}" class="btn btn-warning btn-sm text-dark">
+                            <i class="bi bi-download me-1"></i>下载
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：导入 -->
+        <div class="col-md-6">
+            <div class="card io-card h-100">
+                <div class="card-header bg-primary bg-gradient text-white">
+                    <i class="bi bi-upload me-2"></i>导入数据
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">
+                        从 JSON 文件批量导入食谱或食材。同名数据不会重复导入。
+                    </p>
+
+                    <!-- 导入食谱 -->
+                    <div class="mb-3">
+                        <div class="fw-semibold small mb-2 text-muted">
+                            <i class="bi bi-journal-richtext me-1"></i>导入食谱
+                        </div>
+                        <form action="{{ url_for('import_recipes') }}" method="POST"
+                              enctype="multipart/form-data" id="importRecipeForm">
+                            <div class="upload-zone" id="recipeDropZone"
+                                 onclick="document.getElementById('recipeFile').click()">
+                                <i class="bi bi-cloud-arrow-up fs-3 text-success mb-2"></i>
+                                <p class="mb-1 small fw-semibold">点击选择 JSON 文件</p>
+                                <p class="mb-0 small text-muted">支持 .json 格式</p>
+                                <input type="file" name="file" id="recipeFile" accept=".json"
+                                       onchange="this.form.submit()">
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- 导入食材 -->
+                    <div>
+                        <div class="fw-semibold small mb-2 text-muted">
+                            <i class="bi bi-basket me-1"></i>导入食材
+                        </div>
+                        <form action="{{ url_for('import_ingredients') }}" method="POST"
+                              enctype="multipart/form-data" id="importIngForm">
+                            <div class="upload-zone" id="ingDropZone"
+                                 onclick="document.getElementById('ingFile').click()">
+                                <i class="bi bi-cloud-arrow-up fs-3 text-warning mb-2"></i>
+                                <p class="mb-1 small fw-semibold">点击选择 JSON 文件</p>
+                                <p class="mb-0 small text-muted">支持 .json 格式</p>
+                                <input type="file" name="file" id="ingFile" accept=".json"
+                                       onchange="this.form.submit()">
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JSON 格式说明 -->
+    <div class="card io-card mt-4">
+        <div class="card-header bg-secondary bg-gradient text-white">
+            <i class="bi bi-code-slash me-2"></i>JSON 文件格式说明
+        </div>
+        <div class="card-body">
+            <p class="small text-muted mb-3">
+                导入的 JSON 文件需符合以下格式。导出时会自动生成符合此格式的文件。
+            </p>
+
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <div class="fw-semibold small mb-2 text-success">食谱格式示例</div>
+                    <div class="json-preview">{
+  "recipes": [{
+    "name": "番茄炒蛋",
+    "cuisine": "家常菜",
+    "difficulty": "简单",
+    "prep_time": 10,
+    "cook_time": 15,
+    "tags": ["家常", "快手菜"],
+    "description": "酸甜可口",
+    "steps": ["第一步...", "第二步..."],
+    "ingredients": [{
+      "name": "鸡蛋",
+      "amount": 2,
+      "unit": "个"
+    }]
+  }]
+}</div>
+                </div>
+                <div class="col-md-6">
+                    <div class="fw-semibold small mb-2 text-warning">食材格式示例</div>
+                    <div class="json-preview">{
+  "ingredients": [{
+    "name": "鸡胸肉",
+    "category": "肉类",
+    "nutrition_per_100g": {
+      "calories": 133,
+      "protein": 31.0,
+      "fat": 3.6,
+      "carbs": 0,
+      "fiber": 0,
+      "vitamin_a": 0,
+      "vitamin_c": 0,
+      "calcium": 5,
+      "iron": 1.0
+    }
+  }]
+}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 注意事项 -->
+    <div class="alert alert-warning mt-4 small mb-0">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>注意事项：</strong>导入时同名食材或食谱不会重复创建。导入的 JSON 文件需包含完整的食材名称（必须与食材库中的名称一致），否则食材关联将失效。建议优先导出食材数据，再导出食谱数据。
+    </div>
+
+</div>
+
+<script>
+// 拖拽上传支持
+['recipeDropZone', 'ingDropZone'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        el.classList.add('dragover');
+    });
+    el.addEventListener('dragleave', function() {
+        el.classList.remove('dragover');
+    });
+    el.addEventListener('drop', function(e) {
+        e.preventDefault();
+        el.classList.remove('dragover');
+        var input = el.querySelector('input[type="file"]');
+        if (input && e.dataTransfer.files.length) {
+            input.files = e.dataTransfer.files;
+            el.closest('form').submit();
+        }
+    });
+});
+</script>
+{% endblock %}
