@@ -1,2 +1,43 @@
-# pythonfinal
-final homework of python
+本项目实现了一个 Flask 食谱营养计算器 / 智能膳食管理系统。是一个包含页面、SQLite 数据库、推荐算法和图表展示的 Web 应用。
+核心功能：
+食谱与食材管理
+食材库：维护食材名称、分类、每 100g 的热量、蛋白质、脂肪、碳水、纤维、维生素、钙、铁等。
+食谱库：每道食谱包含菜系、难度、准备/烹饪时间、标签、步骤、食材用量。
+支持新增食材、新增食谱、删除食材、按关键词/标签/菜系/难度筛选食谱。
+当前数据库里有 63 个食材、34 个食谱、141 条食谱-食材关联。
+
+营养计算
+根据食谱中的食材和用量，自动计算整道菜的总热量、蛋白质、脂肪、碳水等。
+支持宏量营养素比例分析，比如蛋白质/脂肪/碳水的热量占比。
+主要逻辑在 models.py (line 293)。
+
+营养看板
+首页 / 是数据看板，展示食谱数量、食材数量、平均热量、热门标签等统计。
+用 Chart.js 和 Matplotlib 生成图表，包括热量柱状图、营养雷达图、多食谱对比图、每周热量趋势、宏量营养分布。
+入口在 app.py (line 154)，图表逻辑在 visualizer.py (line 110)。
+
+食材输入分析
+/analyzer 页面可以输入类似 西红柿200g, 鸡蛋2个 的文本。
+系统会解析食材、模糊匹配数据库中的食材，然后计算总营养。
+解析与匹配逻辑在 utils.py (line 80)。
+
+智能推荐
+/recommend 页面有两种推荐方式：
+按“已有食材”推荐：输入库存食材，系统计算每个食谱的匹配度，并列出缺少哪些食材。
+按“偏好条件”推荐：根据标签、热量范围、耗时、难度筛选，再按营养均衡度排序。
+推荐算法在 recommender.py (line 82) 和 recommender.py (line 223)。
+
+膳食计划生成
+/plan 可以生成 1 到 14 天的早/中/晚餐计划。
+支持每日目标热量，默认按 1800-2400 kcal 随机生成。
+早餐/午餐/晚餐按大约 20%/40%/40% 热量分配。
+逻辑在 recommender.py (line 364)。
+
+数据导入导出
+/data 页面支持导出食谱 JSON、导出食材 JSON。
+也支持上传 JSON 导入食谱或食材。
+对应路由在 app.py (line 999)。
+提供 /api/recipes、/api/analyze、/api/recommend、/api/plan、/api/charts 等接口。
+前端可以通过这些接口动态获取食谱、分析结果、推荐结果和图表数据。
+
+技术栈是：Python + Flask + SQLite + Jinja2 模板 + Bootstrap 5 + Chart.js + Matplotlib。我也做了语法检查，app.py/models.py/database.py/recommender.py/utils.py/visualizer.py 都能通过 Python 解析与
