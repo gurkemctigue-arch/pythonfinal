@@ -40,4 +40,4 @@
 提供 /api/recipes、/api/analyze、/api/recommend、/api/plan、/api/charts 等接口。
 前端可以通过这些接口动态获取食谱、分析结果、推荐结果和图表数据。
 
-技术栈是：Python + Flask + SQLite + Jinja2 模板 + Bootstrap 5 + Chart.js + Matplotlib。我也做了语法检查，app.py/models.py/database.py/recommender.py/utils.py/visualizer.py 都能通过 Python 解析与
+技术栈是：Python + Flask + SQLite + Jinja2 模板 + Bootstrap 5 + Chart.js + Matplotlib。app.py/models.py/database.py/recommender.py/utils.py/visualizer.py 都能通过 Python 解析与compileall 检查
