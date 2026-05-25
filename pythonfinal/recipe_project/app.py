@@ -295,7 +295,8 @@ def index():
 @app.route('/recipes')
 def recipes_page():
     """食谱库页面（支持多条件筛选）"""
-    recipes = load_recipes()
+    all_recipes = load_recipes()
+    recipes = all_recipes
 
     # 读取筛选参数
     keyword = request.args.get('q', '').strip()
@@ -303,21 +304,25 @@ def recipes_page():
     cuisine_filter = request.args.get('cuisine', '').strip()
     difficulty_filter = request.args.get('difficulty', '').strip()
 
-    # 应用筛选
+    # 应用组合筛选：每个条件都基于当前结果继续过滤
     if keyword:
-        recipes = search_recipes(keyword, str(DB_PATH))
+        keyword_lower = keyword.lower()
+        recipes = [
+            r for r in recipes
+            if keyword_lower in r.name.lower()
+            or keyword_lower in r.description.lower()
+            or any(keyword_lower in tag.lower() for tag in r.tags)
+        ]
     if tag_filter:
-        recipes = get_recipes_by_tag(tag_filter, str(DB_PATH))
+        recipes = [r for r in recipes if tag_filter in r.tags]
     if cuisine_filter:
-        from database import get_recipes_by_cuisine
-        recipes = get_recipes_by_cuisine(cuisine_filter, str(DB_PATH))
+        recipes = [r for r in recipes if r.cuisine == cuisine_filter]
     if difficulty_filter:
-        recipes = get_recipes_by_difficulty(difficulty_filter, str(DB_PATH))
+        recipes = [r for r in recipes if r.difficulty == difficulty_filter]
 
     recipe_list = [recipe_to_display(r, getattr(r, '_db_id', None)) for r in recipes]
 
     # 所有标签（从全量数据统计，用于下拉选项）
-    all_recipes = load_recipes()
     all_tags = set()
     for r in all_recipes:
         all_tags.update(r.tags)
@@ -1142,8 +1147,7 @@ def api_recipes():
     elif difficulty:
         recipes = get_recipes_by_difficulty(difficulty, str(DB_PATH))
     elif cuisine:
-        from database import get_recipes_by_cuisine
-        recipes = get_recipes_by_cuisine(cuisine, str(DB_PATH)) if 'get_recipes_by_cuisine' in dir() else recipes
+        recipes = get_recipes_by_cuisine(cuisine, str(DB_PATH))
 
     return jsonify({
         'success': True,
