@@ -94,12 +94,8 @@ init_app()
 # ============================================================================
 
 def load_recipes():
-    """加载所有食谱，并为每个食谱附加数据库ID"""
-    recipes = get_all_recipes(str(DB_PATH))
-    # 为每个食谱附加 _db_id（用于生成详情页链接）
-    for recipe in recipes:
-        recipe._db_id = get_recipe_id_by_name(recipe.name, str(DB_PATH))
-    return recipes
+    """加载所有食谱"""
+    return get_all_recipes(str(DB_PATH))
 
 
 def load_ingredients():

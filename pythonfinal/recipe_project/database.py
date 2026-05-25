@@ -513,7 +513,7 @@ def _row_to_recipe(row: sqlite3.Row, cursor: sqlite3.Cursor) -> Recipe:
     except json.JSONDecodeError:
         steps = []
 
-    return Recipe(
+    recipe = Recipe(
         name=row['name'],
         ingredients=recipe_ingredients,
         steps=steps,
@@ -524,6 +524,8 @@ def _row_to_recipe(row: sqlite3.Row, cursor: sqlite3.Cursor) -> Recipe:
         tags=tags,
         description=row['description']
     )
+    recipe._db_id = recipe_id
+    return recipe
 
 
 # ============================================================================
