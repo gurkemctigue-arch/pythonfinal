@@ -16,6 +16,7 @@
 
 import os
 import json
+import sqlite3
 from pathlib import Path
 from typing import Dict, Any
 
@@ -102,6 +103,28 @@ def load_recipes():
 def load_ingredients():
     """加载所有食材"""
     return get_all_ingredients(str(DB_PATH))
+
+
+def parse_non_negative_float(value: str, field_name: str) -> float:
+    """解析非负数表单字段，失败时给出用户可读错误"""
+    try:
+        parsed = float(value or 0)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name}必须是有效数字")
+    if parsed < 0:
+        raise ValueError(f"{field_name}不能为负数")
+    return parsed
+
+
+def parse_non_negative_int(value: str, field_name: str, default: int = 0) -> int:
+    """解析非负整数表单字段，失败时给出用户可读错误"""
+    try:
+        parsed = int(value or default)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name}必须是有效整数")
+    if parsed < 0:
+        raise ValueError(f"{field_name}不能为负数")
+    return parsed
 
 
 def recipe_to_display(recipe: Recipe, db_id: int = None, nutrition: NutritionInfo = None) -> Dict[str, Any]:
@@ -362,18 +385,24 @@ def ingredient_add():
     if request.method == 'POST':
         name = request.form.get('name', '').strip()
         category = request.form.get('category', '蔬菜').strip()
-        calories = float(request.form.get('calories', 0) or 0)
-        protein = float(request.form.get('protein', 0) or 0)
-        fat = float(request.form.get('fat', 0) or 0)
-        carbs = float(request.form.get('carbs', 0) or 0)
-        fiber = float(request.form.get('fiber', 0) or 0)
-        vitamin_a = float(request.form.get('vitamin_a', 0) or 0)
-        vitamin_c = float(request.form.get('vitamin_c', 0) or 0)
-        calcium = float(request.form.get('calcium', 0) or 0)
-        iron = float(request.form.get('iron', 0) or 0)
 
         if not name:
             return render_template('ingredient_add.html', error="食材名称不能为空")
+        if get_ingredient_by_name(name, str(DB_PATH)):
+            return render_template('ingredient_add.html', error=f"食材「{name}」已存在，请勿重复添加")
+
+        try:
+            calories = parse_non_negative_float(request.form.get('calories', 0), '热量')
+            protein = parse_non_negative_float(request.form.get('protein', 0), '蛋白质')
+            fat = parse_non_negative_float(request.form.get('fat', 0), '脂肪')
+            carbs = parse_non_negative_float(request.form.get('carbs', 0), '碳水')
+            fiber = parse_non_negative_float(request.form.get('fiber', 0), '纤维')
+            vitamin_a = parse_non_negative_float(request.form.get('vitamin_a', 0), '维生素A')
+            vitamin_c = parse_non_negative_float(request.form.get('vitamin_c', 0), '维生素C')
+            calcium = parse_non_negative_float(request.form.get('calcium', 0), '钙')
+            iron = parse_non_negative_float(request.form.get('iron', 0), '铁')
+        except ValueError as e:
+            return render_template('ingredient_add.html', error=str(e))
 
         nutrition = NutritionInfo(
             calories=calories, protein=protein, fat=fat, carbs=carbs,
@@ -381,7 +410,10 @@ def ingredient_add():
             calcium=calcium, iron=iron
         )
         ingredient = Ingredient(name=name, nutrition=nutrition, category=category)
-        db_id = insert_ingredient(ingredient, str(DB_PATH))
+        try:
+            insert_ingredient(ingredient, str(DB_PATH))
+        except sqlite3.IntegrityError:
+            return render_template('ingredient_add.html', error=f"食材「{name}」已存在，请勿重复添加")
 
         return redirect(url_for('ingredients_page'))
 
@@ -411,8 +443,6 @@ def recipe_add():
         name = request.form.get('name', '').strip()
         cuisine = request.form.get('cuisine', '家常菜')
         difficulty = request.form.get('difficulty', '简单')
-        prep_time = int(request.form.get('prep_time', 10) or 10)
-        cook_time = int(request.form.get('cook_time', 20) or 20)
         tags_raw = request.form.get('tags', '')
         description = request.form.get('description', '').strip()
         steps_raw = request.form.get('steps', '').strip()
@@ -420,6 +450,22 @@ def recipe_add():
         if not name:
             return render_template('recipe_add.html',
                 error="食谱名称不能为空",
+                cuisine_options=cuisine_options,
+                difficulty_options=difficulty_options,
+                ing_options=ing_options)
+        if get_recipe_by_name(name, str(DB_PATH)):
+            return render_template('recipe_add.html',
+                error=f"食谱「{name}」已存在，请勿重复添加",
+                cuisine_options=cuisine_options,
+                difficulty_options=difficulty_options,
+                ing_options=ing_options)
+
+        try:
+            prep_time = parse_non_negative_int(request.form.get('prep_time', 10), '准备时间', 10)
+            cook_time = parse_non_negative_int(request.form.get('cook_time', 20), '烹饪时间', 20)
+        except ValueError as e:
+            return render_template('recipe_add.html',
+                error=str(e),
                 cuisine_options=cuisine_options,
                 difficulty_options=difficulty_options,
                 ing_options=ing_options)
@@ -438,20 +484,48 @@ def recipe_add():
         ing_amounts = request.form.getlist('ing_amount')
         ing_units = request.form.getlist('ing_unit')
         ing_map = {ing.name: ing for ing in all_ingredients}
+        ingredient_errors = []
 
         for ing_name, amount, unit in zip(ing_names, ing_amounts, ing_units):
             ing_name = ing_name.strip()
             amount_str = amount.strip()
-            unit = unit.strip()
+            unit = unit.strip() or 'g'
             if ing_name and amount_str:
                 try:
                     amount_val = float(amount_str)
-                    if ing_name in ing_map:
-                        recipe.add_ingredient(ing_map[ing_name], amount_val, unit)
+                    if amount_val <= 0:
+                        ingredient_errors.append(f"食材「{ing_name}」的用量必须大于0")
+                        continue
                 except ValueError:
-                    pass
+                    ingredient_errors.append(f"食材「{ing_name}」的用量必须是有效数字")
+                    continue
 
-        insert_recipe(recipe, str(DB_PATH))
+                if ing_name in ing_map:
+                    recipe.add_ingredient(ing_map[ing_name], amount_val, unit)
+                else:
+                    ingredient_errors.append(f"食材「{ing_name}」不存在")
+
+        if ingredient_errors:
+            return render_template('recipe_add.html',
+                error="；".join(ingredient_errors),
+                cuisine_options=cuisine_options,
+                difficulty_options=difficulty_options,
+                ing_options=ing_options)
+        if not recipe.ingredients:
+            return render_template('recipe_add.html',
+                error="请至少添加一种有效食材，并填写大于0的用量",
+                cuisine_options=cuisine_options,
+                difficulty_options=difficulty_options,
+                ing_options=ing_options)
+
+        try:
+            insert_recipe(recipe, str(DB_PATH))
+        except sqlite3.IntegrityError:
+            return render_template('recipe_add.html',
+                error=f"食谱「{name}」已存在，请勿重复添加",
+                cuisine_options=cuisine_options,
+                difficulty_options=difficulty_options,
+                ing_options=ing_options)
         return redirect(url_for('recipes_page'))
 
     return render_template('recipe_add.html',
