@@ -33,6 +33,7 @@ from database import (
     get_recipes_by_cuisine, get_ingredient_by_name,
     insert_ingredient, insert_recipe, delete_ingredient, DB_PATH
 )
+from dashboard_service import build_dashboard_chart_data, build_recipe_nutrition_map
 from recommender import (
     BasicRecommender, SmartRecommender, MealPlanGenerator,
     RecipeMatch, WeeklyPlan
@@ -103,7 +104,7 @@ def load_ingredients():
     return get_all_ingredients(str(DB_PATH))
 
 
-def recipe_to_display(recipe: Recipe, db_id: int = None) -> Dict[str, Any]:
+def recipe_to_display(recipe: Recipe, db_id: int = None, nutrition: NutritionInfo = None) -> Dict[str, Any]:
     """将 Recipe 对象转换为前端展示用的字典"""
     # 如果没有传入 db_id，尝试从 recipe._db_id 获取，或查询数据库
     if db_id is None:
@@ -111,7 +112,8 @@ def recipe_to_display(recipe: Recipe, db_id: int = None) -> Dict[str, Any]:
     if db_id is None:
         db_id = get_recipe_id_by_name(recipe.name, str(DB_PATH))
 
-    nutrition = NutritionCalculator.calculate_from_recipe(recipe)
+    if nutrition is None:
+        nutrition = NutritionCalculator.calculate_from_recipe(recipe)
     macros = NutritionCalculator.analyze_macros(nutrition)
 
     return {
@@ -163,18 +165,20 @@ def index():
     dashboard = NutritionDashboard(recipes, weekly_plan)
     charts = dashboard.generate_all(save_to_disk=True)
 
+    nutrition_map = build_recipe_nutrition_map(recipes)
+
     # 食谱列表（供前端卡片展示）
-    recipe_list = [recipe_to_display(r, getattr(r, '_db_id', None)) for r in recipes]
+    recipe_list = [
+        recipe_to_display(r, getattr(r, '_db_id', None), nutrition_map[id(r)])
+        for r in recipes
+    ]
 
     # 统计摘要
     ingredients = load_ingredients()
 
     # 计算平均热量
     if recipes:
-        avg_cal = sum(
-            NutritionCalculator.calculate_from_recipe(r).calories
-            for r in recipes
-        ) / len(recipes)
+        avg_cal = sum(nutrition_map[id(r)].calories for r in recipes) / len(recipes)
     else:
         avg_cal = 0
 
@@ -184,93 +188,7 @@ def index():
         for tag in r.tags:
             tag_counts[tag] = tag_counts.get(tag, 0) + 1
 
-    # 热量柱状图（全部食谱，供前端下拉切换）
-    all_recipes_for_bar = [
-        {
-            'name': r.name,
-            'protein': round(NutritionCalculator.calculate_from_recipe(r).protein, 1),
-            'fat': round(NutritionCalculator.calculate_from_recipe(r).fat, 1),
-            'carbs': round(NutritionCalculator.calculate_from_recipe(r).carbs, 1),
-        }
-        for r in recipes
-    ]
-    # 默认取热量最高的8道作为初始柱状图
-    top_recipes = sorted(all_recipes_for_bar, key=lambda r: r['protein'] * 4 + r['fat'] * 9 + r['carbs'] * 4, reverse=True)[:8]
-
-    calorie_bar_data = {
-        'labels': [r['name'] for r in top_recipes],
-        'protein': [r['protein'] for r in top_recipes],
-        'fat': [r['fat'] for r in top_recipes],
-        'carbs': [r['carbs'] for r in top_recipes],
-        'all': all_recipes_for_bar,  # 前端切换时使用完整列表
-    }
-
-    first_nutrition = NutritionCalculator.calculate_from_recipe(recipes[0]) if recipes else None
-    radar_data = None
-    if first_nutrition:
-        radar_data = {
-            'recipe': recipes[0].name,
-            'labels': ['蛋白质', '脂肪', '碳水', '纤维', '维生素A', '维生素C'],
-            'values': [
-                round(min(first_nutrition.protein / 50 * 100, 100), 1),
-                round(min(first_nutrition.fat / 30 * 100, 100), 1),
-                round(min(first_nutrition.carbs / 80 * 100, 100), 1),
-                round(min(first_nutrition.fiber / 10 * 100, 100), 1),
-                round(min(first_nutrition.vitamin_a / 900 * 100, 100), 1),
-                round(min(first_nutrition.vitamin_c / 90 * 100, 100), 1),
-            ],
-        }
-
-    # 多食谱雷达对比（默认取热量最高的4道，可供前端动态选择）
-    multi_default = top_recipes[:4]
-    multi_radar_data = {
-        'labels': ['蛋白质', '脂肪', '碳水', '纤维', '维生素A', '维生素C'],
-        'recipes': [
-            {
-                'name': r['name'],
-                'calories': round(r['protein'] * 4 + r['fat'] * 9 + r['carbs'] * 4, 1),
-                'values': [
-                    round(min(r['protein'] / 50 * 100, 100), 1),
-                    round(min(r['fat'] / 30 * 100, 100), 1),
-                    round(min(r['carbs'] / 80 * 100, 100), 1),
-                    50, 50, 50,
-                ],
-            }
-            for r in multi_default
-        ],
-        'all_recipes': all_recipes_for_bar,  # 前端动态选择时使用
-    }
-
-    trend_data = {
-        'labels': [f'第{i+1}天' for i in range(len(weekly_plan.days))],
-        'calories': [round(day.total_calories, 1) for day in weekly_plan.days],
-        'protein': [round(day.nutrition.protein, 1) for day in weekly_plan.days],
-        'fat': [round(day.nutrition.fat, 1) for day in weekly_plan.days],
-        'carbs': [round(day.nutrition.carbs, 1) for day in weekly_plan.days],
-    }
-
-    total_p = sum(day.nutrition.protein for day in weekly_plan.days)
-    total_f = sum(day.nutrition.fat for day in weekly_plan.days)
-    total_c = sum(day.nutrition.carbs for day in weekly_plan.days)
-    macro_cal = total_p * 4 + total_f * 9 + total_c * 4
-    macro_dist_data = {
-        'labels': ['蛋白质', '脂肪', '碳水'],
-        'values': [round(total_p, 1), round(total_f, 1), round(total_c, 1)],
-        'percentages': [
-            round(total_p * 4 / macro_cal * 100, 1) if macro_cal > 0 else 0,
-            round(total_f * 9 / macro_cal * 100, 1) if macro_cal > 0 else 0,
-            round(total_c * 4 / macro_cal * 100, 1) if macro_cal > 0 else 0,
-        ],
-    }
-
-    chart_data = {
-        'calorie_bar': calorie_bar_data,
-        'radar': radar_data,
-        'multi_radar': multi_radar_data,
-        'trend': trend_data,
-        'macro_dist': macro_dist_data,
-        'all_recipes': all_recipes_for_bar,  # 供前端各图表通用
-    }
+    chart_data = build_dashboard_chart_data(recipes, weekly_plan, nutrition_map)
 
     return render_template(
         'index.html',
@@ -821,104 +739,11 @@ def api_charts():
     recipes = load_recipes()
     planner = MealPlanGenerator(recipes)
     weekly_plan = planner.generate_weekly_plan(days=7)
-
-    # 全部食谱（供前端动态选择）
-    all_for_bar = [
-        {
-            'name': r.name,
-            'protein': round(NutritionCalculator.calculate_from_recipe(r).protein, 1),
-            'fat': round(NutritionCalculator.calculate_from_recipe(r).fat, 1),
-            'carbs': round(NutritionCalculator.calculate_from_recipe(r).carbs, 1),
-        }
-        for r in recipes
-    ]
-    top_recipes = sorted(all_for_bar, key=lambda r: r['protein']*4 + r['fat']*9 + r['carbs']*4, reverse=True)[:8]
-
-    calorie_bar_data = {
-        'labels': [r['name'] for r in top_recipes],
-        'protein': [r['protein'] for r in top_recipes],
-        'fat': [r['fat'] for r in top_recipes],
-        'carbs': [r['carbs'] for r in top_recipes],
-        'all': all_for_bar,
-    }
-
-    # 营养雷达图数据（第一个食谱）
-    if recipes:
-        first_nutrition = NutritionCalculator.calculate_from_recipe(recipes[0])
-        radar_data = {
-            'recipe': recipes[0].name,
-            'labels': ['蛋白质', '脂肪', '碳水', '纤维', '维生素A', '维生素C'],
-            'values': [
-                round(first_nutrition.protein / 50 * 100, 1),
-                round(first_nutrition.fat / 30 * 100, 1),
-                round(first_nutrition.carbs / 80 * 100, 1),
-                round(min(first_nutrition.fiber / 10 * 100, 100), 1),
-                round(min(first_nutrition.vitamin_a / 900 * 100, 100), 1),
-                round(min(first_nutrition.vitamin_c / 90 * 100, 100), 1),
-            ],
-            'raw': {
-                'protein': round(first_nutrition.protein, 1),
-                'fat': round(first_nutrition.fat, 1),
-                'carbs': round(first_nutrition.carbs, 1),
-                'fiber': round(first_nutrition.fiber, 1),
-                'vitamin_a': round(first_nutrition.vitamin_a, 1),
-                'vitamin_c': round(first_nutrition.vitamin_c, 1),
-            }
-        }
-    else:
-        radar_data = None
-
-    # 多食谱雷达对比（默认热量最高的4道）
-    multi_default = top_recipes[:4]
-    multi_radar_data = {
-        'labels': ['蛋白质', '脂肪', '碳水', '纤维', '维生素A', '维生素C'],
-        'recipes': [
-            {
-                'name': r['name'],
-                'calories': round(r['protein']*4 + r['fat']*9 + r['carbs']*4, 1),
-                'values': [
-                    round(r['protein'] / 50 * 100, 1),
-                    round(r['fat'] / 30 * 100, 1),
-                    round(r['carbs'] / 80 * 100, 1),
-                    50, 50, 50,
-                ],
-            }
-            for r in multi_default
-        ],
-        'all_recipes': all_for_bar,
-    }
-
-    # 每周热量趋势
-    trend_data = {
-        'labels': [f'第{i+1}天' for i in range(len(weekly_plan.days))],
-        'calories': [round(day.total_calories, 1) for day in weekly_plan.days],
-        'protein': [round(day.nutrition.protein, 1) for day in weekly_plan.days],
-        'fat': [round(day.nutrition.fat, 1) for day in weekly_plan.days],
-        'carbs': [round(day.nutrition.carbs, 1) for day in weekly_plan.days],
-    }
-
-    # 宏量营养素分布（每周总量）
-    total_p = sum(day.nutrition.protein for day in weekly_plan.days)
-    total_f = sum(day.nutrition.fat for day in weekly_plan.days)
-    total_c = sum(day.nutrition.carbs for day in weekly_plan.days)
-    macro_cal = total_p * 4 + total_f * 9 + total_c * 4
-    pct_p = round(total_p * 4 / macro_cal * 100, 1) if macro_cal > 0 else 0
-    pct_f = round(total_f * 9 / macro_cal * 100, 1) if macro_cal > 0 else 0
-    pct_c = round(total_c * 4 / macro_cal * 100, 1) if macro_cal > 0 else 0
-    macro_dist_data = {
-        'labels': ['蛋白质', '脂肪', '碳水'],
-        'values': [round(total_p, 1), round(total_f, 1), round(total_c, 1)],
-        'percentages': [pct_p, pct_f, pct_c],
-    }
+    chart_data = build_dashboard_chart_data(recipes, weekly_plan)
 
     return jsonify({
         'success': True,
-        'calorie_bar': calorie_bar_data,
-        'radar': radar_data,
-        'multi_radar': multi_radar_data,
-        'trend': trend_data,
-        'macro_dist': macro_dist_data,
-        'all_recipes': all_for_bar,
+        **chart_data,
     })
 
 
