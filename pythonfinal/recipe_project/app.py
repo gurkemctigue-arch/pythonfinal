@@ -14,13 +14,15 @@
     /api/plan           REST API: 膳食计划
 """
 
-import os
 import json
 import sqlite3
+import tempfile
+from datetime import datetime
+from io import BytesIO
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file
 from werkzeug.exceptions import HTTPException
 
 from models import (
@@ -40,11 +42,9 @@ from recommender import (
     RecipeMatch, WeeklyPlan
 )
 from utils import (
-    parse_ingredient_input, fuzzy_match_ingredient, match_parsed_to_inventory,
+    parse_ingredient_input, match_parsed_to_inventory,
     export_recipes_to_json, export_ingredients_to_json,
-    import_recipes_from_json, import_ingredients_from_json,
-    import_recipes_from_json_str, import_ingredients_from_json_str,
-    nutrition_to_display_dict, validate_recipe_data, validate_ingredient_data
+    nutrition_to_display_dict
 )
 from visualizer import (
     NutritionDashboard, plot_nutrition_radar, plot_calorie_pie,
@@ -65,6 +65,7 @@ BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / 'data'
 STATIC_DIR = BASE_DIR / 'static'
 TEMPLATES_DIR = BASE_DIR / 'templates'
+MAX_IMPORT_FILE_BYTES = 2 * 1024 * 1024
 
 # 确保目录存在
 DATA_DIR.mkdir(exist_ok=True)
@@ -125,6 +126,176 @@ def parse_non_negative_int(value: str, field_name: str, default: int = 0) -> int
     if parsed < 0:
         raise ValueError(f"{field_name}不能为负数")
     return parsed
+
+
+def parse_json_upload(file) -> Dict[str, Any]:
+    """读取并校验上传的 JSON 文件。"""
+    if not file or not file.filename:
+        raise ValueError("请选择要上传的 JSON 文件")
+
+    if not file.filename.lower().endswith('.json'):
+        raise ValueError("仅支持 .json 格式文件")
+
+    content = file.read()
+    if not content:
+        raise ValueError("上传的 JSON 文件不能为空")
+    if len(content) > MAX_IMPORT_FILE_BYTES:
+        raise ValueError("JSON 文件不能超过 2MB")
+
+    try:
+        text = content.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        raise ValueError("JSON 文件必须使用 UTF-8 编码")
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"JSON 格式错误：第 {e.lineno} 行第 {e.colno} 列")
+
+    if not isinstance(data, dict):
+        raise ValueError("JSON 顶层结构必须是对象")
+    return data
+
+
+def collect_recipe_import_errors(
+    recipe_rows: List[Dict[str, Any]],
+    ingredient_map: Dict[str, Ingredient]
+) -> List[str]:
+    """导入前校验食谱结构和食材引用。"""
+    errors = []
+    for index, recipe_data in enumerate(recipe_rows, start=1):
+        if not isinstance(recipe_data, dict):
+            errors.append(f"第 {index} 道食谱必须是对象")
+            continue
+
+        name = str(recipe_data.get('name', '')).strip()
+        if not name:
+            errors.append(f"第 {index} 道食谱缺少名称")
+        else:
+            recipe_data['name'] = name
+
+        try:
+            prep_time = int(recipe_data.get('prep_time', 0) or 0)
+            cook_time = int(recipe_data.get('cook_time', 0) or 0)
+            recipe_data['prep_time'] = prep_time
+            recipe_data['cook_time'] = cook_time
+            if prep_time < 0:
+                errors.append(f"食谱「{name or index}」准备时间不能为负数")
+            if cook_time < 0:
+                errors.append(f"食谱「{name or index}」烹饪时间不能为负数")
+        except (TypeError, ValueError):
+            errors.append(f"食谱「{name or index}」时间必须是有效整数")
+
+        ingredients = recipe_data.get('ingredients')
+        if not isinstance(ingredients, list) or not ingredients:
+            errors.append(f"食谱「{name or index}」至少需要一种食材")
+            continue
+
+        valid_ingredient_count = 0
+        for ing_index, ing_data in enumerate(ingredients, start=1):
+            if not isinstance(ing_data, dict):
+                errors.append(f"食谱「{name or index}」第 {ing_index} 个食材必须是对象")
+                continue
+
+            ing_name = str(ing_data.get('name') or ing_data.get('ingredient_name') or '').strip()
+            if not ing_name:
+                errors.append(f"食谱「{name or index}」第 {ing_index} 个食材缺少名称")
+                continue
+            ing_data['name'] = ing_name
+            if ing_name not in ingredient_map:
+                errors.append(f"食谱「{name or index}」引用的食材「{ing_name}」不存在")
+                continue
+
+            try:
+                amount = float(ing_data.get('amount', 0))
+            except (TypeError, ValueError):
+                errors.append(f"食谱「{name or index}」中食材「{ing_name}」用量必须是有效数字")
+                continue
+
+            if amount <= 0:
+                errors.append(f"食谱「{name or index}」中食材「{ing_name}」用量必须大于0")
+                continue
+
+            ing_data['amount'] = amount
+            ing_data['unit'] = str(ing_data.get('unit', 'g')).strip() or 'g'
+            valid_ingredient_count += 1
+
+        if valid_ingredient_count == 0:
+            errors.append(f"食谱「{name or index}」没有可导入的有效食材")
+
+    return errors[:8]
+
+
+def collect_ingredient_import_errors(ingredient_rows: List[Dict[str, Any]]) -> List[str]:
+    """导入前校验并规范化食材营养数据。"""
+    errors = []
+    nutrition_fields = NutritionInfo.__dataclass_fields__.keys()
+    for index, row in enumerate(ingredient_rows, start=1):
+        if not isinstance(row, dict):
+            errors.append(f"第 {index} 种食材必须是对象")
+            continue
+
+        name = str(row.get('name', '')).strip()
+        if not name:
+            errors.append(f"第 {index} 种食材缺少名称")
+        else:
+            row['name'] = name
+
+        try:
+            unit_per_100g = float(row.get('unit_per_100g', 100.0) or 100.0)
+        except (TypeError, ValueError):
+            errors.append(f"食材「{name or index}」默认重量必须是有效数字")
+            unit_per_100g = 100.0
+        if unit_per_100g <= 0:
+            errors.append(f"食材「{name or index}」默认重量必须大于0")
+        row['unit_per_100g'] = unit_per_100g
+
+        nutrition = row.get('nutrition_per_100g')
+        if not isinstance(nutrition, dict):
+            errors.append(f"食材「{name or index}」缺少 nutrition_per_100g 营养数据")
+            continue
+
+        for field in nutrition_fields:
+            try:
+                value = float(nutrition.get(field, 0) or 0)
+            except (TypeError, ValueError):
+                errors.append(f"食材「{name or index}」的 {field} 必须是有效数字")
+                continue
+            if value < 0:
+                errors.append(f"食材「{name or index}」的 {field} 不能为负数")
+            nutrition[field] = value
+
+    return errors[:8]
+
+
+def validate_import_collection(data: Dict[str, Any], key: str) -> List[Dict[str, Any]]:
+    """获取并校验导入列表字段。"""
+    rows = data.get(key)
+    if rows is None:
+        raise ValueError(f"JSON 文件缺少 {key} 字段")
+    if not isinstance(rows, list):
+        raise ValueError(f"{key} 字段必须是数组")
+    if not rows:
+        raise ValueError("JSON 文件中没有可导入的数据")
+    return rows
+
+
+def import_result_message(label: str, created: int, skipped: int) -> str:
+    """生成导入后的提示文案。"""
+    message = f"成功导入 {created} {label}"
+    if skipped:
+        message += f"，跳过 {skipped} 条同名数据"
+    return message
+
+
+def export_json_payload(exporter, *args, **kwargs) -> bytes:
+    """使用现有导出函数生成 JSON 字节，避免下载后残留临时文件。"""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        export_path = Path(tmp_dir) / 'export.json'
+        ok = exporter(*args, str(export_path), **kwargs)
+        if not ok:
+            raise RuntimeError("导出失败")
+        return export_path.read_bytes()
 
 
 def recipe_to_display(recipe: Recipe, db_id: int = None, nutrition: NutritionInfo = None) -> Dict[str, Any]:
@@ -912,23 +1083,19 @@ def data_page():
 def export_recipes():
     """导出全部食谱为 JSON 文件下载"""
     recipes = load_recipes()
-    import tempfile, datetime
-    from flask import send_file
-
-    tmp = tempfile.NamedTemporaryFile(
-        mode='w', suffix='.json', delete=False,
-        encoding='utf-8'
-    )
-    tmp_path = tmp.name
-
-    ok = export_recipes_to_json(recipes, tmp_path, include_nutrition=True)
-    if not ok:
+    try:
+        payload = export_json_payload(
+            export_recipes_to_json,
+            recipes,
+            include_nutrition=True
+        )
+    except RuntimeError:
         return render_template('error.html', message="导出食谱失败"), 500
 
-    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     filename = f'食谱库_{timestamp}.json'
     return send_file(
-        tmp_path,
+        BytesIO(payload),
         mimetype='application/json',
         as_attachment=True,
         download_name=filename
@@ -939,23 +1106,15 @@ def export_recipes():
 def export_ingredients():
     """导出全部食材为 JSON 文件下载"""
     ingredients = get_all_ingredients(str(DB_PATH))
-    import tempfile, datetime
-    from flask import send_file
-
-    tmp = tempfile.NamedTemporaryFile(
-        mode='w', suffix='.json', delete=False,
-        encoding='utf-8'
-    )
-    tmp_path = tmp.name
-
-    ok = export_ingredients_to_json(ingredients, tmp_path)
-    if not ok:
+    try:
+        payload = export_json_payload(export_ingredients_to_json, ingredients)
+    except RuntimeError:
         return render_template('error.html', message="导出食材失败"), 500
 
-    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     filename = f'食材库_{timestamp}.json'
     return send_file(
-        tmp_path,
+        BytesIO(payload),
         mimetype='application/json',
         as_attachment=True,
         download_name=filename
@@ -965,29 +1124,28 @@ def export_ingredients():
 @app.route('/import/recipes', methods=['POST'])
 def import_recipes():
     """导入食谱 JSON 文件"""
-    import os
-    file = request.files.get('file')
-    if not file:
-        flash('请选择要上传的 JSON 文件', 'error')
-        return redirect(url_for('data_page'))
-
-    if not file.filename.endswith('.json'):
-        flash('仅支持 .json 格式文件', 'error')
-        return redirect(url_for('data_page'))
-
     try:
-        content = file.read().decode('utf-8')
+        data = parse_json_upload(request.files.get('file'))
+        recipe_rows = validate_import_collection(data, 'recipes')
         ingredient_map = {ing.name: ing for ing in get_all_ingredients(str(DB_PATH))}
-        imported = import_recipes_from_json_str(content, ingredient_map)
+        validation_errors = collect_recipe_import_errors(recipe_rows, ingredient_map)
+        if validation_errors:
+            raise ValueError('；'.join(validation_errors))
+
+        imported = [Recipe.from_dict(row, ingredient_map) for row in recipe_rows]
         count = 0
+        skipped = 0
         for recipe in imported:
             existing = get_recipe_by_name(recipe.name, str(DB_PATH))
-            if not existing:
-                insert_recipe(recipe, str(DB_PATH))
-                count += 1
-        flash(f'成功导入 {count} 道食谱！', 'success')
+            if existing:
+                skipped += 1
+                continue
+            insert_recipe(recipe, str(DB_PATH))
+            count += 1
+
+        flash(import_result_message('道食谱', count, skipped), 'success')
         return redirect(url_for('data_page'))
-    except Exception as e:
+    except (ValueError, KeyError, TypeError, sqlite3.IntegrityError) as e:
         flash(f'导入失败：{str(e)}', 'error')
         return redirect(url_for('data_page'))
 
@@ -995,28 +1153,28 @@ def import_recipes():
 @app.route('/import/ingredients', methods=['POST'])
 def import_ingredients():
     """导入食材 JSON 文件"""
-    import os
-    file = request.files.get('file')
-    if not file:
-        flash('请选择要上传的 JSON 文件', 'error')
-        return redirect(url_for('data_page'))
-
-    if not file.filename.endswith('.json'):
-        flash('仅支持 .json 格式文件', 'error')
-        return redirect(url_for('data_page'))
-
     try:
-        content = file.read().decode('utf-8')
-        imported = import_ingredients_from_json_str(content)
+        data = parse_json_upload(request.files.get('file'))
+        ingredient_rows = validate_import_collection(data, 'ingredients')
+
+        validation_errors = collect_ingredient_import_errors(ingredient_rows)
+        if validation_errors:
+            raise ValueError('；'.join(validation_errors))
+
+        imported = [Ingredient.from_dict(row) for row in ingredient_rows]
         count = 0
+        skipped = 0
         for ing in imported:
             existing = get_ingredient_by_name(ing.name, str(DB_PATH))
-            if not existing:
-                insert_ingredient(ing, str(DB_PATH))
-                count += 1
-        flash(f'成功导入 {count} 种食材！', 'success')
+            if existing:
+                skipped += 1
+                continue
+            insert_ingredient(ing, str(DB_PATH))
+            count += 1
+
+        flash(import_result_message('种食材', count, skipped), 'success')
         return redirect(url_for('data_page'))
-    except Exception as e:
+    except (ValueError, KeyError, TypeError, sqlite3.IntegrityError) as e:
         flash(f'导入失败：{str(e)}', 'error')
         return redirect(url_for('data_page'))
 
