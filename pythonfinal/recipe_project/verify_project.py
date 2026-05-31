@@ -64,6 +64,32 @@ def build_checks() -> List[Check]:
             assert_true(payload and payload.get("success") is True, "图表 API 返回格式异常")
             assert_true("radar" in payload and "raw" in payload["radar"], "雷达图数据缺少 raw 字段")
 
+        def recommend_api() -> None:
+            response = client.post(
+                "/api/recommend",
+                json={
+                    "ingredients": "鸡蛋 2个, 西红柿 200g, 食用油 10g",
+                    "max_missing": 2,
+                    "limit": 5,
+                },
+            )
+            assert_true(response.status_code == 200, "推荐 API 无法访问")
+            payload = response.get_json()
+            assert_true(payload and payload.get("success") is True, "推荐 API 返回格式异常")
+            assert_true(payload.get("count", 0) <= 5, "推荐 API 未按 limit 限制结果")
+
+        def plan_api() -> None:
+            response = client.post("/api/plan", json={"days": 20, "target_calories": 2000})
+            assert_true(response.status_code == 200, "膳食计划 API 无法访问")
+            payload = response.get_json()
+            assert_true(payload and payload.get("success") is True, "膳食计划 API 返回格式异常")
+            days = payload.get("plan", {}).get("days", [])
+            assert_true(len(days) == 14, "膳食计划 API 未限制最大天数")
+            for day in days:
+                meals = [day.get("breakfast"), day.get("lunch"), day.get("dinner")]
+                names = [name for name in meals if name]
+                assert_true(len(names) == len(set(names)), "同一天膳食计划存在重复菜品")
+
         def export_endpoints() -> None:
             for url, key in (("/export/recipes", b'"recipes"'), ("/export/ingredients", b'"ingredients"')):
                 response = client.get(url)
@@ -112,6 +138,8 @@ def build_checks() -> List[Check]:
             ("食谱页面筛选", recipes_page_filters),
             ("食谱 API 菜系筛选", recipes_api_filters),
             ("图表 API 数据", charts_api),
+            ("推荐 API 参数处理", recommend_api),
+            ("膳食计划 API 参数处理", plan_api),
             ("导出接口", export_endpoints),
             ("导入错误提示", import_validation),
             ("新增表单校验", add_form_validation),

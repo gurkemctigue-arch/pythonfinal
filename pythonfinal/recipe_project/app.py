@@ -288,6 +288,26 @@ def import_result_message(label: str, created: int, skipped: int) -> str:
     return message
 
 
+def parse_int_range(value, field_name: str, default: int, minimum: int, maximum: int) -> int:
+    """解析整数并限制范围，API 和查询参数共用。"""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(parsed, maximum))
+
+
+def parse_optional_float_range(value, minimum: float, maximum: float):
+    """解析可选浮点数并限制范围。"""
+    if value in (None, ''):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(minimum, min(parsed, maximum))
+
+
 def export_json_payload(exporter, *args, **kwargs) -> bytes:
     """使用现有导出函数生成 JSON 字节，避免下载后残留临时文件。"""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -912,18 +932,8 @@ def plan():
         return render_template('plan.html', error="食谱库为空，请先添加食谱", weekly_plan=None)
 
     # 读取用户自定义参数
-    try:
-        days = int(request.args.get('days', 7))
-        days = max(1, min(days, 14))  # 限制 1-14 天
-    except (ValueError, TypeError):
-        days = 7
-
-    try:
-        target_cal = request.args.get('target_cal', '')
-        target_calories = float(target_cal) if target_cal else None
-        target_calories = max(800, min(target_calories, 4000)) if target_calories else None
-    except (ValueError, TypeError):
-        target_calories = None  # None = 使用默认随机范围
+    days = parse_int_range(request.args.get('days', 7), '计划天数', 7, 1, 14)
+    target_calories = parse_optional_float_range(request.args.get('target_cal', ''), 800, 4000)
 
     planner = MealPlanGenerator(recipes)
     weekly_plan = planner.generate_weekly_plan(days=days, target_calories=target_calories)
@@ -968,7 +978,7 @@ def plan():
         },
         matplotlib_available=_check_matplotlib(),
         current_days=days,
-        current_target=target_calories,
+        current_target=int(target_calories) if target_calories else None,
     )
 
 
@@ -1225,7 +1235,7 @@ def api_recipe_detail(recipe_id):
 @app.route('/api/analyze', methods=['POST'])
 def api_analyze():
     """API: 分析食材营养"""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     input_text = data.get('ingredients', '')
 
     if not input_text:
@@ -1265,16 +1275,30 @@ def api_analyze():
 @app.route('/api/recommend', methods=['POST'])
 def api_recommend():
     """API: 智能推荐"""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     user_ingredients = data.get('ingredients', [])
-    max_missing = data.get('max_missing', 3)
+    if isinstance(user_ingredients, str):
+        user_ingredients = [
+            parsed.name
+            for parsed in parse_ingredient_input(user_ingredients)
+        ]
+    if not isinstance(user_ingredients, list):
+        return jsonify({'success': False, 'error': 'ingredients 必须是数组或字符串'}), 400
+
+    max_missing = parse_int_range(data.get('max_missing', 3), '最大缺失食材数', 3, 0, 20)
+    min_match_score = parse_optional_float_range(data.get('min_match_score', 30), 0, 100)
+    limit = parse_int_range(data.get('limit', 20), '返回数量', 20, 1, 50)
 
     recipes = load_recipes()
     recommender = SmartRecommender(recipes)
-    matches = recommender.recommend_by_inventory(user_ingredients, max_missing=max_missing)
+    matches = recommender.recommend_by_inventory(
+        user_ingredients,
+        max_missing=max_missing,
+        min_match_score=min_match_score if min_match_score is not None else 30,
+    )
 
     results = []
-    for m in matches[:20]:
+    for m in matches[:limit]:
         results.append({
             'recipe': recipe_to_display(m.recipe),
             'match_score': round(m.match_score, 1),
@@ -1293,14 +1317,14 @@ def api_recommend():
 @app.route('/api/plan', methods=['POST'])
 def api_plan():
     """API: 生成膳食计划"""
-    data = request.get_json()
-    days = data.get('days', 7)
-    target_calories = data.get('target_calories')
+    data = request.get_json(silent=True) or {}
+    days = parse_int_range(data.get('days', 7), '计划天数', 7, 1, 14)
+    target_calories = parse_optional_float_range(data.get('target_calories'), 800, 4000)
 
     recipes = load_recipes()
     planner = MealPlanGenerator(recipes)
     weekly = planner.generate_weekly_plan(
-        days=min(days, 14),
+        days=days,
         target_calories=target_calories
     )
 

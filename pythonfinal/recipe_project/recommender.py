@@ -9,6 +9,7 @@
 
 import random
 import copy
+import difflib
 from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass
 
@@ -84,6 +85,14 @@ class BasicRecommender:
 
     def __init__(self, recipes: List[Recipe]):
         self.recipes = recipes
+        self._nutrition_cache: Dict[int, NutritionInfo] = {}
+
+    def _nutrition(self, recipe: Recipe) -> NutritionInfo:
+        """缓存食谱营养计算结果，避免组合筛选和排序重复计算。"""
+        cache_key = id(recipe)
+        if cache_key not in self._nutrition_cache:
+            self._nutrition_cache[cache_key] = NutritionCalculator.calculate_from_recipe(recipe)
+        return self._nutrition_cache[cache_key]
 
     def filter_by_tags(self, tags: List[str]) -> List[Recipe]:
         """
@@ -122,7 +131,7 @@ class BasicRecommender:
         """
         results = []
         for recipe in self.recipes:
-            total = NutritionCalculator.calculate_from_recipe(recipe)
+            total = self._nutrition(recipe)
             if min_cal <= total.calories <= max_cal:
                 results.append(recipe)
         return results
@@ -171,7 +180,7 @@ class BasicRecommender:
         if min_cal > 0 or max_cal < float('inf'):
             filtered = []
             for r in results:
-                total = NutritionCalculator.calculate_from_recipe(r)
+                total = self._nutrition(r)
                 if min_cal <= total.calories <= max_cal:
                     filtered.append(r)
             results = filtered
@@ -199,7 +208,7 @@ class BasicRecommender:
 
         scored = []
         for recipe in recipes:
-            total = NutritionCalculator.calculate_from_recipe(recipe)
+            total = self._nutrition(recipe)
             macros = NutritionCalculator.analyze_macros(total)
 
             # 计算与目标的偏差
@@ -232,6 +241,53 @@ class SmartRecommender:
 
     def __init__(self, recipes: List[Recipe]):
         self.recipes = recipes
+        self._nutrition_cache: Dict[int, NutritionInfo] = {}
+
+    @staticmethod
+    def _normalize_name(name: str) -> str:
+        """标准化食材名称，提升包含空格/大小写时的匹配稳定性。"""
+        return ''.join(str(name).lower().split())
+
+    @staticmethod
+    def _dedupe_names(names: List[str]) -> List[str]:
+        """保持原顺序去重。"""
+        seen = set()
+        result = []
+        for name in names:
+            cleaned = str(name).strip()
+            if not cleaned:
+                continue
+            key = SmartRecommender._normalize_name(cleaned)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(cleaned)
+        return result
+
+    def _nutrition(self, recipe: Recipe) -> NutritionInfo:
+        """缓存推荐过程中的营养计算结果。"""
+        cache_key = id(recipe)
+        if cache_key not in self._nutrition_cache:
+            self._nutrition_cache[cache_key] = NutritionCalculator.calculate_from_recipe(recipe)
+        return self._nutrition_cache[cache_key]
+
+    def _has_ingredient(self, target_name: str, user_ingredients: List[str]) -> bool:
+        """支持精确、包含和轻量相似度匹配。"""
+        target = self._normalize_name(target_name)
+        if not target:
+            return False
+
+        user_names = [self._normalize_name(name) for name in user_ingredients]
+        if target in user_names:
+            return True
+
+        for user_name in user_names:
+            if target in user_name or user_name in target:
+                return True
+            if difflib.SequenceMatcher(None, target, user_name).ratio() >= 0.72:
+                return True
+
+        return False
 
     def calculate_match_score(
         self,
@@ -245,13 +301,13 @@ class SmartRecommender:
             (匹配度分数0-100, 匹配的食材列表, 缺失的食材列表)
         """
         recipe_ing_names = recipe.get_ingredient_names()
-        user_set = set(user_ingredients)
+        user_ingredients = self._dedupe_names(user_ingredients)
 
         matched = []
         missing = []
 
         for ing_name in recipe_ing_names:
-            if ing_name in user_set:
+            if self._has_ingredient(ing_name, user_ingredients):
                 matched.append(ing_name)
             else:
                 missing.append(ing_name)
@@ -284,6 +340,12 @@ class SmartRecommender:
         """
         if exclude_missing is None:
             exclude_missing = []
+        user_ingredients = self._dedupe_names(user_ingredients)
+        exclude_keys = {
+            self._normalize_name(name)
+            for name in exclude_missing
+            if str(name).strip()
+        }
 
         results = []
         for recipe in self.recipes:
@@ -298,11 +360,11 @@ class SmartRecommender:
                 continue
 
             # 过滤：包含用户不想买的食材
-            if any(ing in missing for ing in exclude_missing):
+            if any(self._normalize_name(ing) in exclude_keys for ing in missing):
                 continue
 
             # 计算营养成分
-            nutrition = NutritionCalculator.calculate_from_recipe(recipe)
+            nutrition = self._nutrition(recipe)
 
             # 生成推荐理由
             if score >= 100:
@@ -322,8 +384,13 @@ class SmartRecommender:
             )
             results.append(match)
 
-        # 按匹配度从高到低排序
-        results.sort(key=lambda x: x.match_score, reverse=True)
+        # 优先缺失少，其次匹配高、耗时短，推荐结果更实用
+        results.sort(key=lambda x: (
+            len(x.missing_ingredients),
+            -x.match_score,
+            x.recipe.total_time,
+            x.nutrition.calories,
+        ))
         return results
 
     def find_complete_recipes(
@@ -387,7 +454,15 @@ class MealPlanGenerator:
 
     def __init__(self, recipes: List[Recipe]):
         self.recipes = recipes
+        self._nutrition_cache: Dict[int, NutritionInfo] = {}
         self._categorize_recipes()
+
+    def _nutrition(self, recipe: Recipe) -> NutritionInfo:
+        """缓存膳食计划中的营养计算结果。"""
+        cache_key = id(recipe)
+        if cache_key not in self._nutrition_cache:
+            self._nutrition_cache[cache_key] = NutritionCalculator.calculate_from_recipe(recipe)
+        return self._nutrition_cache[cache_key]
 
     def _categorize_recipes(self):
         """将食谱按热量分为轻食/正餐两类"""
@@ -395,7 +470,7 @@ class MealPlanGenerator:
         self.main_recipes = []    # 主餐（午/晚餐）
 
         for r in self.recipes:
-            total = NutritionCalculator.calculate_from_recipe(r)
+            total = self._nutrition(r)
             if total.calories < 300 or '沙拉' in r.name or '水果' in r.tags:
                 self.light_recipes.append(r)
             else:
@@ -411,7 +486,8 @@ class MealPlanGenerator:
         self,
         target_calories: float,
         tolerance: float = 0.3,
-        prefer_light: bool = False
+        prefer_light: bool = False,
+        used_names: Optional[set] = None
     ) -> Optional[Recipe]:
         """
         为特定餐次槽选择合适的食谱
@@ -426,6 +502,7 @@ class MealPlanGenerator:
         """
         candidates = self.light_recipes if prefer_light else self.main_recipes
         pool = candidates if candidates else self.recipes
+        used_names = used_names or set()
 
         min_cal = target_calories * (1 - tolerance)
         max_cal = target_calories * (1 + tolerance)
@@ -433,21 +510,35 @@ class MealPlanGenerator:
         # 筛选符合热量范围的食谱
         valid = []
         for r in pool:
-            total = NutritionCalculator.calculate_from_recipe(r)
+            if r.name in used_names:
+                continue
+            total = self._nutrition(r)
             if min_cal <= total.calories <= max_cal:
                 valid.append(r)
 
         if not valid:
             # 放宽范围重新搜索
             for r in pool:
-                total = NutritionCalculator.calculate_from_recipe(r)
+                if r.name in used_names:
+                    continue
+                total = self._nutrition(r)
                 if total.calories > 0:
                     valid.append(r)
+
+        if not valid and used_names:
+            return self._select_recipe_for_slot(
+                target_calories,
+                tolerance=tolerance,
+                prefer_light=prefer_light,
+                used_names=set()
+            )
 
         if not valid:
             return None
 
-        return random.choice(valid)
+        valid.sort(key=lambda r: abs(self._nutrition(r).calories - target_calories))
+        best_pool = valid[:min(5, len(valid))]
+        return random.choice(best_pool)
 
     def _calculate_daily_nutrition(
         self,
@@ -460,7 +551,7 @@ class MealPlanGenerator:
         recipes = [r for r in [breakfast, lunch, dinner] if r]
 
         for r in recipes:
-            total = total + NutritionCalculator.calculate_from_recipe(r)
+            total = total + self._nutrition(r)
 
         calories = total.calories
         macros = NutritionCalculator.analyze_macros(total)
@@ -512,10 +603,20 @@ class MealPlanGenerator:
         lunch_target = target_calories * self.MEAL_RATIO['lunch']
         dinner_target = target_calories * self.MEAL_RATIO['dinner']
 
-        # 选择食谱（最多重试5次）
-        breakfast = self._select_recipe_for_slot(breakfast_target, prefer_light=True)
-        lunch = self._select_recipe_for_slot(lunch_target)
-        dinner = self._select_recipe_for_slot(dinner_target)
+        used_names = set()
+        breakfast = self._select_recipe_for_slot(
+            breakfast_target,
+            prefer_light=True,
+            used_names=used_names
+        )
+        if breakfast:
+            used_names.add(breakfast.name)
+
+        lunch = self._select_recipe_for_slot(lunch_target, used_names=used_names)
+        if lunch:
+            used_names.add(lunch.name)
+
+        dinner = self._select_recipe_for_slot(dinner_target, used_names=used_names)
 
         # 计算营养
         calories, macros, nutrition = self._calculate_daily_nutrition(
@@ -547,6 +648,7 @@ class MealPlanGenerator:
             WeeklyPlan 对象
         """
         daily_plans = []
+        days = max(1, min(int(days), 14))
         weekly_calories = 0
         weekly_protein = 0
         weekly_fat = 0
